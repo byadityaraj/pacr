@@ -92,10 +92,10 @@ This adds the pacr status line and the `/pacr` command to Claude Code. Your exis
 2. Install it:
 
    ```bash
-   code --install-extension pacr-0.1.0.vsix       # VS Code
-   cursor --install-extension pacr-0.1.0.vsix     # Cursor
-   windsurf --install-extension pacr-0.1.0.vsix   # Windsurf
-   codium --install-extension pacr-0.1.0.vsix     # VSCodium
+   code --install-extension pacr-0.2.0.vsix       # VS Code
+   cursor --install-extension pacr-0.2.0.vsix     # Cursor
+   windsurf --install-extension pacr-0.2.0.vsix   # Windsurf
+   codium --install-extension pacr-0.2.0.vsix     # VSCodium
    ```
 
    Or in the editor: **Extensions → ⋯ → Install from VSIX…**
