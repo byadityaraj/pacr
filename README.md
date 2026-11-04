@@ -44,9 +44,9 @@ Check the setup any time with `pacr doctor`.
 |---|---|
 | <img src="docs/images/today.png" alt="pacr today" width="400"> | <img src="docs/images/week.png" alt="pacr week" width="400"> |
 
-| Ways to save tokens | VS Code status bar |
-|---|---|
-| <img src="docs/images/tips.png" alt="pacr tips" width="400"> | <img src="docs/images/vscode.png" alt="pacr in VS Code" width="400"> |
+**Ways to save tokens**
+
+<img src="docs/images/tips.png" alt="pacr tips" width="820">
 
 ## Installation
 
