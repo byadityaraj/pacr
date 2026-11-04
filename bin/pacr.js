@@ -5,6 +5,9 @@ const path = require('path');
 const util = require('../src/util');
 const pkg = require('../package.json');
 
+// `pacr … | head` closes the pipe early: stop quietly instead of printing an EPIPE stack trace.
+process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0); throw e; });
+
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith('-') ? argv[0] : null;
 const rest = cmd ? argv.slice(1) : argv;
@@ -34,7 +37,9 @@ const HELP = `pacr ${pkg.version} — Claude Code usage tracker (unofficial, loc
 
   pacr                    quick view: tokens + limits right now
   pacr today [--date YYYY-MM-DD]   hour-by-hour tokens and 5h window use
+  pacr day YYYY-MM-DD     same, for any day     pacr yesterday
   pacr week [--last]      day-by-day, weekly limit projection, vs last week
+  pacr month [--last]     calendar month: per week, day strip, vs last month, top projects
   pacr sessions [--top 10] [--days 7]   heaviest sessions, with flags
   pacr session <id>       one session: breakdown + timeline
   pacr branches [--days 30]   tokens per git branch (cost of a feature)
@@ -79,7 +84,14 @@ function main() {
       if (d && date == null) return out('Use --date YYYY-MM-DD');
       return out(r.today({ date }));
     }
+    case 'day': {
+      const date = util.parseDateArg(positional[0]);
+      if (date == null) return out('Usage: pacr day YYYY-MM-DD');
+      return out(r.today({ date }));
+    }
+    case 'yesterday': return out(r.today({ date: util.startOfDay(util.startOfDay(Date.now()) - 1) }));
     case 'week': return out(r.week({ last: flag('last') }));
+    case 'month': return out(r.month({ last: flag('last') }));
     case 'sessions': return out(r.sessions({ top: num('top', 10), days: num('days', 7) }));
     case 'session': return out(r.session({ id: positional[0] }));
     case 'branches': return out(r.branches({ days: num('days', 30) }));

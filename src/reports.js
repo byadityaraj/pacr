@@ -25,11 +25,12 @@ function today({ date = null, now = Date.now() } = {}) {
   const snaps = snapshots.read({ since: dayStart - 6 * HOUR, until: dayEnd });
   const inc = snapshots.increments(snaps, 'f').filter((x) => x.t >= dayStart);
   const isToday = dayStart === startOfDay(now);
+  const isYesterday = dayStart === startOfDay(startOfDay(now) - 1);
 
   const total = records.reduce((x, r) => x + tot(r, cr()), 0);
   const sids = new Set(records.map((r) => r.sid));
   const lines = [];
-  lines.push(`${c('w', (isToday ? 'Today · ' : '') + fmtDay(dayStart))}   total ${c('w', fmtTok(total))} tokens${cachedNote(cachedOf(records))} · ${sids.size} session${sids.size === 1 ? '' : 's'}`);
+  lines.push(`${c('w', (isToday ? 'Today · ' : isYesterday ? 'Yesterday · ' : '') + fmtDay(dayStart))}   total ${c('w', fmtTok(total))} tokens${cachedNote(cachedOf(records))} · ${sids.size} session${sids.size === 1 ? '' : 's'}`);
   lines.push('');
   if (!records.length) {
     lines.push(c('d', 'No Claude Code usage logged for this day.'));
@@ -431,6 +432,132 @@ function alertsView() {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------- month
+// Calendar month in local time. Limits are per 5 hours and per week only, so nothing here
+// is shown as a share of a "monthly limit".
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const addMonths = (ts, n) => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth() + n, 1).getTime(); };
+const addDays = (ts, n) => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n).getTime(); };
+
+// Claude Code deletes session logs not touched for `cleanupPeriodDays` (default 30), so anything
+// older than that may be missing.
+function logRetentionDays() {
+  try {
+    const v = JSON.parse(require('fs').readFileSync(require('./paths').claudeSettingsPath(), 'utf8')).cleanupPeriodDays;
+    return Number.isFinite(v) && v > 0 ? v : 30;
+  } catch { return 30; }
+}
+
+function monthRange(now, last) {
+  const start = addMonths(startOfDay(now), last ? -1 : 0);
+  return { start, end: addMonths(start, 1), prevStart: addMonths(start, -1) };
+}
+
+// Pure: everything month() prints, from records + snapshots. `records` may include the previous month.
+function monthData({ records, snaps, start, end, prevStart, now, countCacheReads = false, retentionDays = 30 }) {
+  const inMonth = records.filter((r) => r.ts >= start && r.ts < end);
+  const fresh = (rs) => rs.reduce((x, r) => x + logs.total(r, countCacheReads), 0);
+
+  // Rows: Monday-based weeks, clipped to the month.
+  const weeks = [];
+  for (let ws = start; ws < end;) {
+    const we = Math.min(addDays(startOfWeek(ws), 7), end);
+    const rs = inMonth.filter((r) => r.ts >= ws && r.ts < we);
+    const sn = snaps.filter((s) => s.t >= ws && s.t < we);
+    weeks.push({
+      start: ws, end: we, future: ws > now,
+      tokens: fresh(rs), cached: cachedOf(rs),
+      hits: snapshots.hits(snaps, 'f').filter((h) => h.hitAt >= ws && h.hitAt < we).length,
+      weekPeak: sn.reduce((x, s) => (s.w != null ? Math.max(x, s.w) : x), null)
+    });
+    ws = we;
+  }
+
+  const days = [];
+  for (let d = start; d < end; d = addDays(d, 1)) {
+    days.push({ start: d, future: d > now, tokens: fresh(inMonth.filter((r) => r.ts >= d && r.ts < addDays(d, 1))) });
+  }
+
+  // vs previous month over the same stretch: the days so far (or the whole month for --last).
+  const span = Math.min(now, end) - start;
+  const prevEnd = Math.min(prevStart + span, start);
+  const prev = { start: prevStart, end: prevEnd, tokens: fresh(records.filter((r) => r.ts >= prevStart && r.ts < prevEnd)),
+    partial: prevStart < now - retentionDays * DAY };
+
+  const top = (key) => {
+    const m = new Map();
+    for (const r of inMonth) { const k = key(r); if (k) m.set(k, (m.get(k) || 0) + logs.total(r, countCacheReads)); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  };
+  return {
+    start, end, weeks, days, prev,
+    tokens: fresh(inMonth), cached: cachedOf(inMonth),
+    sessions: new Set(inMonth.map((r) => r.sid)).size,
+    activeDays: days.filter((d) => d.tokens > 0).length,
+    projects: top((r) => projName(r.cwd)),
+    branches: top((r) => r.branch)
+  };
+}
+
+const STRIP = '▁▂▃▄▅▆▇█';
+function month({ last = false, now = Date.now() } = {}) {
+  const { start, end, prevStart } = monthRange(now, last);
+  const { records } = logs.scan({ since: prevStart, until: end });
+  const snaps = snapshots.read({ since: start - DAY, until: end });
+  const retentionDays = logRetentionDays();
+  const m = monthData({ records, snaps, start, end, prevStart, now, countCacheReads: cr(), retentionDays });
+  const d0 = new Date(start);
+  const lines = [];
+  lines.push(`${c('w', `${last ? 'Last month' : 'This month'} · ${MONTHS[d0.getMonth()]} ${d0.getFullYear()}`)}   total ${c('w', fmtTok(m.tokens))} tokens${cachedNote(m.cached)} · ${m.sessions} session${m.sessions === 1 ? '' : 's'} · ${m.activeDays} active day${m.activeDays === 1 ? '' : 's'}`);
+  lines.push('');
+  if (!m.tokens && !m.cached) { lines.push(c('d', 'No Claude Code usage logged this month.')); return lines.join('\n'); }
+
+  const max = Math.max(1, ...m.weeks.map((w) => w.tokens));
+  const showCached = !cr();
+  const rows = m.weeks.map((w) => {
+    const lastDay = new Date(w.end - 1).getDate();
+    const label = fmtDay(w.start).slice(4) + (lastDay !== new Date(w.start).getDate() ? `–${lastDay}` : '');
+    if (w.future) return [label, c('d', '—'), ...(showCached ? [''] : []), '', '', ''];
+    const isNow = !last && now >= w.start && now < w.end;
+    return [
+      label,
+      fmtTok(w.tokens),
+      ...(showCached ? [c('d', w.cached ? '+' + fmtTok(w.cached) : '—')] : []),
+      w.hits ? c('r', String(w.hits)) : c('d', '0'),
+      w.weekPeak != null ? c(levelColor(w.weekPeak, config.load()), Math.round(w.weekPeak) + '%') : c('d', '—'),
+      bar((w.tokens / max) * 100, 16, isNow ? 'y' : 'g')
+    ];
+  });
+  const heads = ['week', 'tokens', ...(showCached ? ['cached'] : []), '5h limit hits', 'weekly peak', 'share'];
+  lines.push(table(heads, rows, ['l', 'r', ...(showCached ? ['r'] : []), 'r', 'r', 'l']));
+  lines.push('');
+
+  const dmax = Math.max(1, ...m.days.map((d) => d.tokens));
+  const strip = m.days.map((d) => (d.future ? ' ' : !d.tokens ? c('d', '·') : c(!last && d.start === startOfDay(now) ? 'y' : 'g', STRIP[Math.min(7, Math.floor((d.tokens / dmax) * 8))]))).join('');
+  lines.push(`${c('d', 'days')}  ${c('d', '1')} ${strip} ${c('d', String(m.days.length))}`);
+  lines.push('');
+
+  const p = m.prev;
+  const pd0 = new Date(p.start);
+  const nDays = Math.round((p.end - p.start) / DAY);
+  const range = last ? '(whole month)' : `1–${Math.max(1, nDays)} (same days so far)`;
+  if (p.partial) {
+    lines.push(c('d', `vs ${MONTHS[pd0.getMonth()].slice(0, 3)} ${range}: `) + `${fmtTok(p.tokens)} → ${fmtTok(m.tokens)}`);
+    lines.push(c('d', `  ${MONTHS[pd0.getMonth()]} may be incomplete: Claude Code deletes logs older than ${retentionDays} days (cleanupPeriodDays)`));
+  } else if (p.tokens) {
+    const ch = Math.round(((m.tokens - p.tokens) / p.tokens) * 100);
+    lines.push(c('d', `vs ${MONTHS[pd0.getMonth()].slice(0, 3)} ${range}: `) +
+      `${fmtTok(p.tokens)} → ${fmtTok(m.tokens)} ` + c(ch > 15 ? 'y' : 'g', `(${ch >= 0 ? '+' : ''}${ch}%)`));
+  } else {
+    lines.push(c('d', `vs ${MONTHS[pd0.getMonth()].slice(0, 3)}: no usage logged over the same days`));
+  }
+  const share = (n) => `${Math.round((n / Math.max(1, m.tokens)) * 100)}%`;
+  const list = (xs) => xs.map(([k, n]) => `${t(k)} ${c('d', fmtTok(n) + ' · ' + share(n))}`).join(c('d', '   '));
+  if (m.projects.length) lines.push(`${padEnd(c('d', 'top projects'), 14)} ${list(m.projects)}`);
+  if (m.branches.length) lines.push(`${padEnd(c('d', 'top branches'), 14)} ${list(m.branches)}`);
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------- overview (default command)
 function overview({ now = Date.now() } = {}) {
   const st = getState({ now });
@@ -445,8 +572,8 @@ function overview({ now = Date.now() } = {}) {
   if (st.snapAgeMs != null && st.snap && (st.snap.f != null || st.snap.w != null)) lines.push(c('d', `limits as of ${fmtDur(st.snapAgeMs)} ago (from the status line)`));
   if (!st.snap) lines.push(c('d', 'No limit data yet: run `pacr install` to add the status line.'));
   lines.push('');
-  lines.push(c('d', 'more: pacr today | week | sessions | branches | heatmap | tips | plan | alerts | help'));
+  lines.push(c('d', 'more: pacr today | week | month | sessions | branches | heatmap | tips | plan | alerts | help'));
   return lines.join('\n');
 }
 
-module.exports = { today, week, sessions, session, branches, heatmap, tips, plan, summary, summaryNotify, alertsView, overview };
+module.exports = { today, week, month, monthData, monthRange, sessions, session, branches, heatmap, tips, plan, summary, summaryNotify, alertsView, overview };

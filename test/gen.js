@@ -23,6 +23,8 @@ function generate(home, now = Date.now()) {
   let msgN = 0;
   // total/byDay include cache reads; fresh/freshByDay don't (the default totals).
   const expected = { total: 0, byDay: {}, fresh: 0, freshByDay: {} };
+  const freshByMin = new Map(); // minute start → fresh tokens, drives the limit snapshots
+
   const DAY = 86400000;
   for (let d = 27; d >= 0; d--) {
     const day = new Date(now - d * DAY); day.setHours(0, 0, 0, 0);
@@ -34,6 +36,8 @@ function generate(home, now = Date.now()) {
       const sid = `${(d * 10 + si).toString(16).padStart(4, '0')}${Math.floor(rand() * 1e8).toString(16)}-aaaa-bbbb-cccc-${String(d).padStart(12, '0')}`;
       const startHour = 9 + Math.floor(rand() * 8);
       let ts = day.getTime() + startHour * 3600000 + Math.floor(rand() * 3600000);
+      // Today before 9:00 (e.g. CI early in the UTC day): start earlier so "today" always has usage.
+      if (d === 0 && ts > now - 60000) ts = Math.max(day.getTime(), now - (30 + Math.floor(rand() * 90)) * 60000);
       if (ts > now - 60000) continue;
       const long = rand() < 0.25;
       const nMsgs = long ? 70 + Math.floor(rand() * 60) : 8 + Math.floor(rand() * 40);
@@ -79,29 +83,31 @@ function generate(home, now = Date.now()) {
         const fresh = tot - usage.cache_read_input_tokens;
         expected.fresh += fresh;
         expected.freshByDay[k] = (expected.freshByDay[k] || 0) + fresh;
+        const mk = Math.floor(ts / 60000) * 60000;
+        freshByMin.set(mk, (freshByMin.get(mk) || 0) + fresh);
       }
       fs.appendFileSync(path.join(dir, `${sid}.jsonl`), lines.join('\n') + '\n');
     }
   }
 
-  // Snapshots: 5h windows that fill during work hours, weekly % climbing over the week.
+  // Snapshots follow the generated usage, like the real status line: one per active minute.
+  // A 5h window opens at the first message after the previous one reset; % grows with fresh tokens.
+  const FIVE_H_CAP = 2200000;  // fresh tokens that fill a 5h window in this fake plan
+  const WEEK_CAP = 25000000;   // ...and a week
   const tp = path.join(home, '.pacr');
   fs.mkdirSync(tp, { recursive: true });
   const snaps = [];
-  let weekPct = 0;
   let weekReset = now + 2.3 * DAY;
   while (weekReset - 7 * DAY > now - 27 * DAY) weekReset -= 7 * DAY;
-  for (let d = 27; d >= 0; d--) {
-    const day = new Date(now - d * DAY); day.setHours(0, 0, 0, 0);
-    const winStart = day.getTime() + 10 * 3600000;
-    const winReset = winStart + 5 * 3600000;
-    const heavy = rand() < 0.3;
-    let f = 0;
-    for (let t = winStart; t < winReset && t < now; t += 60000) {
-      if (t >= weekReset) { weekReset += 7 * DAY; weekPct = 0; }
-      if (t - winStart < 3 * 3600000) { f = Math.min(100, f + (heavy ? 0.6 : 0.25) * rand() * 2); weekPct = Math.min(100, weekPct + 0.012 * rand() * 2); }
-      snaps.push({ t, sid: null, m: 'Opus', mid: 'claude-opus-4-8', f: +f.toFixed(1), fr: winReset, w: +weekPct.toFixed(1), wr: weekReset, c: 40, usd: null, p: '/home/dev/shop-api' });
-    }
+  let weekPct = 0;
+  let winReset = 0;
+  let f = 0;
+  for (const t of [...freshByMin.keys()].sort((a, b) => a - b)) {
+    if (t >= weekReset) { while (t >= weekReset) weekReset += 7 * DAY; weekPct = 0; }
+    if (t >= winReset) { winReset = t + 5 * 3600000; f = 0; }
+    f = Math.min(100, f + (freshByMin.get(t) / FIVE_H_CAP) * 100);
+    weekPct = Math.min(100, weekPct + (freshByMin.get(t) / WEEK_CAP) * 100);
+    snaps.push({ t: t + 30000, sid: null, m: 'Opus', mid: 'claude-opus-4-8', f: +f.toFixed(1), fr: winReset, w: +weekPct.toFixed(1), wr: weekReset, c: 40, usd: null, p: '/home/dev/shop-api' });
   }
   fs.writeFileSync(path.join(tp, 'snapshots.jsonl'), snaps.map((s) => JSON.stringify(s)).join('\n') + '\n');
   return { expected, weekReset };

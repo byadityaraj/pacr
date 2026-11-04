@@ -49,14 +49,16 @@ setTimeout(() => {
     console.log('background:', statusItem.backgroundColor && statusItem.backgroundColor.id);
 
     vscode.commands._c['pacr.showReport']();
-    for (const k of ['overview', 'today', 'week', 'sessions', 'branches', 'heatmap', 'tips', 'plan', 'summary', 'alerts']) panelMsgHandler({ k });
+    const SECTIONS = ['overview', 'today', 'week', 'month', 'sessions', 'branches', 'heatmap', 'tips', 'plan', 'summary', 'alerts'];
+    for (const k of SECTIONS) panelMsgHandler({ k });
     setTimeout(() => {
-      assert.strictEqual(posted.length, 10);
+      assert.strictEqual(posted.length, SECTIONS.length);
+      assert.match(posted[3].html, /This month · /);
       for (const p of posted) {
         assert.ok(p.html.length > 30);
         assert.doesNotMatch(p.html, /\x1b\[|NaN|undefined|Error:/);
       }
-      console.log('report panel: 10 sections rendered as html, e.g.\n' + posted[2].html.split('\n').slice(0, 3).join('\n'));
+      console.log(`report panel: ${posted.length} sections rendered as html, e.g.\n` + posted[3].html.split('\n').slice(0, 3).join('\n'));
       console.log('vscode notifications so far:', messages.length);
       ext.deactivate();
       console.log('VS CODE MOCK OK');

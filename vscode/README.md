@@ -20,7 +20,7 @@ Works whether you use Claude Code in the integrated terminal or in the Claude Co
 Token counts work on their own. The 5-hour and weekly **percentages** come from Claude Code's status line, so install the CLI once and add it:
 
 ```
-npm install -g pacr
+npm install -g github:byadityaraj/pacr
 pacr install
 ```
 

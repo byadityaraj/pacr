@@ -10,7 +10,8 @@ Unofficial, local-only Claude Code usage tracker: tokens per hour/day/week/sessi
 - `src/state.js` — current state (tokens, limits, burn rate, quick tip). Shared by status line, alerts, VS Code.
 - `src/statusline.js` — 2–3 line output. Line 3 only when needed.
 - `src/alerts.js` — fire-once alerts → `~/.pacr/alerts.jsonl` + desktop notification (`src/notify.js`).
-- `src/analyze.js` — session stats, tips engine, plan fit. `src/reports.js` — all text reports (ansi or html via `util.setColorMode`).
+- `src/analyze.js` — session stats, tips engine, plan fit. `src/reports.js` — all text reports (ansi or html via `util.setColorMode`). `monthData()` is pure (records + snapshots in, numbers out) so month logic is unit-tested without logs.
+- Claude Code deletes logs older than `cleanupPeriodDays` (default 30): anything comparing against older data must say it may be incomplete.
 - `src/install.js` — edits `statusLine` in `~/.claude/settings.json`, backs up the old one; writes `~/.claude/commands/pacr.md` (`/pacr`), marked with `<!-- installed by pacr -->` so a user's own file is never touched.
 - `vscode/extension.js` — status bar, report webview, alert popups. `scripts/build-vscode.js` copies `src/` and `bin/` into `vscode/` and packages a .vsix.
 
@@ -26,3 +27,6 @@ Unofficial, local-only Claude Code usage tracker: tokens per hour/day/week/sessi
 - `HOME=<tmp> PACR_HOME=<tmp>/.pacr node test/vscode-mock.js` — runs the extension against a mock `vscode`.
 - `node scripts/build-vscode.js --package` → `dist/pacr-x.y.z.vsix`.
 - Tested by hand on macOS (CLI, status line, /pacr; extension installed in VS Code + Cursor). Not yet on real Windows/Linux — CI is the first check there.
+
+## Git
+- Never add Co-Authored-By, Claude-Session or 'Generated with Claude Code' lines to commits, PRs or releases.

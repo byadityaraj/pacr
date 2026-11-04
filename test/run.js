@@ -115,7 +115,7 @@ test('alerts were recorded', () => {
   assert.match(a, /Burn rate high/);
 });
 
-for (const args of [[], ['today'], ['week'], ['week', '--last'], ['sessions'], ['branches'], ['heatmap'], ['tips'], ['plan'], ['summary'], ['alerts'], ['doctor'], ['budget'], ['config']]) {
+for (const args of [[], ['today'], ['week'], ['week', '--last'], ['month'], ['month', '--last'], ['yesterday'], ['sessions'], ['branches'], ['heatmap'], ['tips'], ['plan'], ['summary'], ['alerts'], ['doctor'], ['budget'], ['config']]) {
   test(`command: pacr ${args.join(' ')}`, () => {
     const o = run(args);
     assert.ok(o.length > 20, 'output too short');
@@ -179,6 +179,68 @@ test('session growth counts context incl. cache reads, even when totals leave th
   }));
   const s = A.sessionStats(recs, [], false)[0];
   assert.ok(s.growth > 5, `growth ${s.growth}`);
+});
+
+test('month: weeks split at Monday, totals add up, previous month compared over the same days', () => {
+  const R = require('../src/reports');
+  // March 2026: Sun Mar 1 is its own week row, Mon Mar 2 starts the next one.
+  const start = new Date(2026, 2, 1).getTime();
+  const end = new Date(2026, 3, 1).getTime();
+  const prevStart = new Date(2026, 1, 1).getTime();
+  const at = (y, mo, d, h) => new Date(y, mo, d, h).getTime();
+  const rec = (ts, inp, cr, extra = {}) => ({ ts, sid: extra.sid || 's1', cwd: extra.cwd || '/p/app', branch: extra.branch || 'main', model: 'opus', side: false, inp, out: 0, cw: 0, cr, tools: [] });
+  const records = [
+    rec(at(2026, 1, 3, 10), 50, 0),                    // Feb 3: inside "same days so far"
+    rec(at(2026, 1, 20, 10), 999, 0),                  // Feb 20: after it, not compared
+    rec(at(2026, 2, 1, 23), 100, 1000),                // Sun Mar 1, late evening
+    rec(at(2026, 2, 2, 0), 200, 2000, { branch: 'feat-x', cwd: '/p/api' }), // Mon Mar 2, just after midnight
+    rec(at(2026, 2, 3, 9), 300, 0, { sid: 's2', cwd: '/p/api' })
+  ];
+  const snaps = [{ t: at(2026, 2, 2, 12), f: 99, fr: at(2026, 2, 2, 15), w: 62, wr: at(2026, 2, 8, 9) }];
+  const now = at(2026, 2, 3, 12);
+  const m = R.monthData({ records, snaps, start, end, prevStart, now, retentionDays: 9999 });
+  assert.strictEqual(m.weeks.length, 6);
+  assert.deepStrictEqual([m.weeks[0].start, m.weeks[0].end], [start, at(2026, 2, 2, 0)]);
+  assert.strictEqual(m.weeks[0].tokens, 100);
+  assert.strictEqual(m.weeks[0].cached, 1000);
+  assert.strictEqual(m.weeks[1].tokens, 500);
+  assert.strictEqual(m.weeks[1].hits, 1);
+  assert.strictEqual(m.weeks[1].weekPeak, 62);
+  assert.strictEqual(m.weeks[0].weekPeak, null);
+  assert.ok(m.weeks[2].future && !m.weeks[1].future);
+  assert.strictEqual(m.tokens, m.weeks.reduce((x, w) => x + w.tokens, 0));
+  assert.strictEqual(m.days.length, 31);
+  assert.deepStrictEqual(m.days.slice(0, 3).map((d) => d.tokens), [100, 200, 300]);
+  assert.strictEqual(m.prev.tokens, 50);
+  assert.strictEqual(m.prev.partial, false);
+  assert.deepStrictEqual(m.projects[0], ['api', 500]);
+  assert.deepStrictEqual(m.branches.map((b) => b[0]), ['main', 'feat-x']);
+  assert.strictEqual(m.sessions, 2);
+  // With 30-day log retention, February is flagged as possibly incomplete.
+  assert.strictEqual(R.monthData({ records, snaps, start, end, prevStart, now, retentionDays: 30 }).prev.partial, true);
+});
+
+test('month / day / yesterday commands', () => {
+  const plain = (a) => run(a).replace(/\x1b\[[0-9;]*m/g, '');
+  const mo = plain(['month']);
+  assert.match(mo, /^This month · \w+ \d{4}   total \S+ tokens · \+\S+ cached · \d+ sessions? · \d+ active days?/);
+  assert.match(mo, /^week +tokens +cached +5h limit hits +weekly peak +share$/m);
+  assert.match(mo, /^days  1 .+ (28|29|30|31)$/m);
+  assert.match(mo, /^vs \w{3} /m);
+  assert.doesNotMatch(mo, /monthly limit/i);
+  assert.match(plain(['month', '--last']), /^Last month · /);
+  const d = new Date(now - 86400000);
+  const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  assert.strictEqual(plain(['day', ymd]), plain(['today', '--date', ymd]));
+  assert.strictEqual(plain(['yesterday']), plain(['day', ymd]));
+  assert.match(plain(['yesterday']), /^Yesterday · /);
+  assert.match(plain(['day', 'nope']), /Usage: pacr day YYYY-MM-DD/);
+});
+
+test('piping into a closed reader (| head) exits quietly', () => {
+  const { spawnSync } = require('child_process');
+  const r = spawnSync('sh', ['-c', `"${process.execPath}" "${BIN}" help | head -1`], { env, encoding: 'utf8' });
+  assert.strictEqual(r.stderr, '');
 });
 
 test('fmtTok formatting', () => {

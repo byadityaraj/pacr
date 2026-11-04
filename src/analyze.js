@@ -3,6 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const { HOME } = require('./paths');
+
+// ~/… instead of the full home path: shorter, and safe to paste into an issue.
+const tildify = (p) => (p === HOME || p.startsWith(HOME + path.sep) ? '~' + p.slice(HOME.length) : p);
 const { total } = require('./logs');
 const snapshots = require('./snapshots');
 const { fmtTok } = require('./util');
@@ -192,7 +195,7 @@ function tips({ records, snaps, mcpUsed, countCacheReads = false }) {
     out.push({
       saving: Math.round((memTotal - 2000) * reqs),
       title: `Memory files (CLAUDE.md) total ~${(memTotal / 1000).toFixed(1)}k tokens`,
-      detail: `loaded into every request; largest: ${biggest.path} (~${(biggest.tokens / 1000).toFixed(1)}k)`,
+      detail: `loaded into every request; largest: ${tildify(biggest.path)} (~${(biggest.tokens / 1000).toFixed(1)}k)`,
       action: 'trim them to the essentials (aim for under 2k tokens)'
     });
   }
