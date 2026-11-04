@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.testhome/
+vscode/src/
+vscode/bin/
+vscode/LICENSE
+*.vsix
+.DS_Store

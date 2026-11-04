@@ -1,0 +1,40 @@
+{
+  "name": "pacr",
+  "version": "0.1.0",
+  "description": "Unofficial, privacy-first Claude Code usage tracker: tokens per hour/day/week, 5-hour and weekly limits, burn rate, smart tips and alerts. Terminal status line + VS Code.",
+  "author": "Aditya Raj",
+  "homepage": "https://github.com/byadityaraj/pacr#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/byadityaraj/pacr.git"
+  },
+  "bugs": {
+    "url": "https://github.com/byadityaraj/pacr/issues"
+  },
+  "bin": {
+    "pacr": "bin/pacr.js"
+  },
+  "main": "src/index.js",
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run.js",
+    "build:vscode": "node scripts/build-vscode.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "tokens",
+    "usage",
+    "statusline",
+    "rate-limit",
+    "cli"
+  ],
+  "license": "MIT"
+}

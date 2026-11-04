@@ -1,0 +1,86 @@
+{
+  "name": "pacr",
+  "displayName": "pacr — Claude Code usage",
+  "description": "Unofficial, local-only Claude Code usage tracker: tokens per hour/day/week, 5-hour and weekly limits, burn rate, tips and alerts in your status bar.",
+  "version": "0.1.0",
+  "publisher": "pacr",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "tokens",
+    "usage",
+    "rate limit"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pacr.showReport",
+        "title": "pacr: Show usage report"
+      },
+      {
+        "command": "pacr.refresh",
+        "title": "pacr: Refresh"
+      }
+    ],
+    "configuration": {
+      "title": "pacr",
+      "properties": {
+        "pacr.refreshSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 10,
+          "description": "How often the status bar item updates."
+        },
+        "pacr.alignment": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "default": "right",
+          "description": "Status bar side (reload the window after changing)."
+        },
+        "pacr.showLimits": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show 5-hour and weekly limit percentages."
+        },
+        "pacr.showWeekTokens": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also show this week's tokens in the status bar."
+        },
+        "pacr.notifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show pacr alerts as VS Code notifications."
+        },
+        "pacr.desktopNotifications": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also send OS desktop notifications from VS Code (the CLI status line already does this)."
+        }
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/byadityaraj/pacr.git"
+  },
+  "homepage": "https://github.com/byadityaraj/pacr#readme",
+  "bugs": {
+    "url": "https://github.com/byadityaraj/pacr/issues"
+  }
+}
