@@ -137,9 +137,10 @@ pre{font-family:var(--vscode-editor-font-family);font-size:var(--vscode-editor-f
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const st = vscode.getState() || { k: 'overview' };
-function sel(k){ document.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.k===k)); document.getElementById('out').textContent='Loading…'; vscode.setState({k}); vscode.postMessage({k}); }
+let cur = st.k;
+function sel(k){ cur = k; document.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.k===k)); document.getElementById('out').textContent='Loading…'; vscode.setState({k}); vscode.postMessage({k}); }
 document.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>sel(b.dataset.k)));
-window.addEventListener('message', e => { if (e.data && e.data.html != null) document.getElementById('out').innerHTML = e.data.html; });
+window.addEventListener('message', e => { if (e.data && e.data.html != null && (e.data.k == null || e.data.k === cur)) document.getElementById('out').innerHTML = e.data.html; });
 sel(st.k);
 </script></body></html>`;
 }
@@ -150,7 +151,7 @@ function showReport() {
   panel.webview.html = html(panel.webview);
   panel.webview.onDidReceiveMessage((m) => {
     if (!m || !m.k) return;
-    setTimeout(() => { if (panel) panel.webview.postMessage({ html: renderSection(m.k) }); }, 10);
+    setTimeout(() => { if (panel) panel.webview.postMessage({ k: m.k, html: renderSection(m.k) }); }, 10);
   });
   panel.onDidDispose(() => { panel = undefined; });
 }

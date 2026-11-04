@@ -71,6 +71,7 @@ test('countCacheReads true brings back totals with cache reads', () => {
 test('reports show cache reads as a separate figure; status line does not', () => {
   assert.match(run(['today']), /total \S+ tokens · \+\S+ cached · /);
   assert.match(run(['week']), /total \S+  · \+\S+ cached  · avg/);
+  assert.match(run(['week']), /^busiest \w{3}  · top project /m);
   assert.match(run([]), /^cached \(not counted above\): hour \S+ · today \S+ · week \S+$/m);
   assert.doesNotMatch(run(['statusline'], input(42, 38, 20)), /cached/);
 });

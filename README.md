@@ -38,6 +38,8 @@ Start a new Claude Code session. The status line appears at the bottom, and `/pa
 
 Check the setup any time with `pacr doctor`.
 
+**VS Code / Cursor:** download `pacr-x.y.z.vsix` from [Releases](https://github.com/byadityaraj/pacr/releases/latest) and run `code --install-extension pacr-x.y.z.vsix` (or `cursor …`). [Details](#3-vs-code-cursor-windsurf-vscodium-optional).
+
 ## Screenshots
 
 | Today, hour by hour | This week |
@@ -84,7 +86,7 @@ pacr install
 
 This adds the pacr status line and the `/pacr` command to Claude Code. Your existing status line is backed up and restored by `pacr uninstall`. Start a new Claude Code session to see it.
 
-### 3. Add it to your editor (optional)
+### 3. VS Code, Cursor, Windsurf, VSCodium (optional)
 
 1. Download `pacr-x.y.z.vsix` from [Releases](https://github.com/byadityaraj/pacr/releases/latest).
 2. Install it:
@@ -97,7 +99,9 @@ This adds the pacr status line and the `/pacr` command to Claude Code. Your exis
    ```
 
    Or in the editor: **Extensions → ⋯ → Install from VSIX…**
-3. Reload the window. pacr appears in the status bar; click it for the full report.
+
+   No `code` / `cursor` command? Open the Command Palette (`Cmd+Shift+P`) → **Shell Command: Install 'code' command in PATH** (Cursor: *Install 'cursor' command*).
+3. Restart the editor (quit fully with `Cmd+Q` / close all windows, then reopen). pacr appears in the status bar; click it for the full report.
 
 It works whether you run Claude Code in the terminal or in the Claude Code extension panel.
 

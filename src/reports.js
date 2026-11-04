@@ -144,9 +144,12 @@ function week({ last = false, now = Date.now() } = {}) {
   const projTok = new Map();
   for (const r of cur) projTok.set(projName(r.cwd), (projTok.get(projName(r.cwd)) || 0) + tot(r, cr()));
   const topProj = [...projTok.entries()].sort((a, b) => b[1] - a[1])[0];
-  lines.push(`${c('d', 'total')} ${fmtTok(total)}${cachedNote(cachedOf(cur), '  · ')}  ${c('d', '· avg/active day')} ${fmtTok(activeDays ? total / activeDays : 0)}` +
-    (busiest && busiest[1].tok ? `  ${c('d', '· busiest')} ${DOW[new Date(busiest[0]).getDay()]}` : '') +
-    (topProj ? `  ${c('d', '· top project')} ${t(topProj[0])} (${Math.round((topProj[1] / Math.max(1, total)) * 100)}%)` : ''));
+  lines.push(`${c('d', 'total')} ${fmtTok(total)}${cachedNote(cachedOf(cur), '  · ')}  ${c('d', '· avg/active day')} ${fmtTok(activeDays ? total / activeDays : 0)}`);
+  const extra = [
+    busiest && busiest[1].tok ? `${c('d', 'busiest')} ${DOW[new Date(busiest[0]).getDay()]}` : '',
+    topProj ? `${c('d', 'top project')} ${t(topProj[0])} (${Math.round((topProj[1] / Math.max(1, total)) * 100)}%)` : ''
+  ].filter(Boolean);
+  if (extra.length) lines.push(extra.join(c('d', '  · ')));
 
   // vs last week at the same point
   const elapsed = Math.min(end, now) - start;
