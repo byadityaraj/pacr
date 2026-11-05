@@ -223,6 +223,7 @@ Run `pacr doctor` first. It checks each piece and says what's missing.
 | Status line doesn't appear | Start a new Claude Code session, then run `pacr doctor` |
 | No limit percentages | They appear after the first reply in a Pro or Max session. API-key logins don't have them |
 | claude.ai/settings/usage is a little ahead of pacr | On Team, Pro and Max plans, claude.ai chat shares your limits. pacr only sees chat usage after Claude Code's next reply, so the usage page can be a little ahead until then |
+| pacr's 5h or weekly % is 1% lower than claude.ai/settings/usage | Expected, not a bug. Claude Code passes whole-number percentages and appears to drop the decimal (2.7% → 2%), while claude.ai rounds (→ 3%). See [docs/limits.md](docs/limits.md) |
 | `/pacr` missing | Run `pacr install` again, then start a new session |
 | No desktop notifications | Run `pacr alerts test`. macOS: allow notifications for Script Editor in System Settings. Linux: install `notify-send` (libnotify) |
 | Hard to read on a light terminal | pacr uses your terminal's colours. Also pick a light theme in Claude Code with `/theme` |
