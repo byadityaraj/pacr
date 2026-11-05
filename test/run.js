@@ -27,7 +27,9 @@ function test(name, fn) {
 
 // Scan totals match generator (dedupe of split lines keeps the larger usage).
 test('scan total matches generated data', () => {
-  process.env.HOME = home; process.env.PACR_HOME = env.PACR_HOME;
+  // In-process tests too: os.homedir() reads USERPROFILE on Windows, HOME elsewhere.
+  process.env.HOME = home; process.env.USERPROFILE = home; process.env.PACR_HOME = env.PACR_HOME;
+  delete process.env.CLAUDE_CONFIG_DIR; delete process.env.XDG_CONFIG_HOME;
   delete require.cache[require.resolve('../src/paths')];
   const out = run(['export', '--json', '--days', '40']);
   const recs = JSON.parse(out);
