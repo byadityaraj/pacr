@@ -430,8 +430,6 @@ test('hooks install / off / uninstall keep other settings; pacr uninstall remove
   const o = run(['hooks', 'install', '--yes']);
   assert.match(o, /"PreToolUse"/);
   assert.match(o, /Hook added/);
-  assert.match(o, /^Experimental\./);
-  assert.match(run(['help']), /hooks install \[--yes\]\s+experimental/);
   assert.ok(fs.existsSync(sp + '.pacr-hooks.bak'));
   run(['hooks', 'install', '--yes']); // twice: still one entry
   let s = JSON.parse(fs.readFileSync(sp, 'utf8'));

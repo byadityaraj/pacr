@@ -133,13 +133,11 @@ It works whether you run Claude Code in the terminal or in the Claude Code exten
 | `pacr alerts` | Alert settings and recent alerts (`pacr alerts test` sends one) |
 | `pacr budget daily 3M` | Set your own daily or weekly token budget |
 | `pacr export --csv` | Raw data for Excel or Sheets |
-| `pacr hooks install` | Experimental, opt-in: trim test/build output to failures + summary (see below) |
+| `pacr hooks install` | Opt-in: trim test/build output to failures + summary (see below) |
 
 Run `pacr help` for every option.
 
-## Trim test and build output (experimental, opt-in)
-
-> **Experimental.** Not yet tested in a live Claude Code session on every platform. Turn it off any time with `pacr hooks off`.
+## Trim test and build output (opt-in)
 
 Tool results are sent back to the model as input, and test or build runs are often the biggest ones. `pacr tools` shows which commands and files cost you the most. `pacr hooks install` adds a [PreToolUse hook](https://code.claude.com/docs/en/costs) that trims test and build output before Claude sees it:
 

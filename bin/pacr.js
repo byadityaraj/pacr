@@ -65,7 +65,7 @@ const HELP = `pacr ${pkg.version} — Claude Code usage tracker (unofficial, loc
   pacr watch              background loop for alerts when Claude Code is closed
   pacr install [--refresh 30]   add the status line to Claude Code
   pacr uninstall          remove it (restores your previous one, removes the hook)
-  pacr hooks install [--yes]   experimental, opt-in: trim test/build output to failures + summary
+  pacr hooks install [--yes]   opt-in hook: trim test/build output to failures + summary
   pacr hooks status | off | on | uninstall
   pacr doctor             check setup
 
@@ -179,7 +179,7 @@ function hooksCmd() {
   switch (sub) {
     case 'install': {
       const st = hooks.status();
-      out(`Experimental. pacr will add this PreToolUse hook to ${st.path}:\n`);
+      out(`pacr will add this PreToolUse hook to ${st.path}:\n`);
       out(hooks.preview());
       out(`\nBefore simple test/build commands (npm test, npm run build, pnpm/yarn test|build, pytest, go test,
 cargo test) run, it pipes their output through a filter that keeps failures, errors and the summary
