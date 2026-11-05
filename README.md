@@ -177,6 +177,8 @@ Settings are stored in `~/.pacr/config.json`. Editor settings are under `pacr.*`
 
 ## How it works
 
+How many tokens fit in your limits? See the [estimates](docs/limits.md).
+
 - **Tokens** come from Claude Code's local session logs in `~/.claude/projects`. Totals count fresh tokens (input, output and cache writes). Cache reads are shown separately because they're usually over 90% of the raw number but count far less toward your limits.
 - **Limit percentages** come from the data Claude Code passes to its status line. They're available on Pro and Max plans. pacr never guesses token caps per plan.
 - **History**: Claude Code doesn't keep a history of limit percentages, so pacr saves a snapshot about once a minute while you work. Burn rate, limit-hit history and `pacr plan` get more accurate after a few days.

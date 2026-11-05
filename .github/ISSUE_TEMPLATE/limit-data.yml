@@ -1,0 +1,54 @@
+name: Share your limit numbers
+description: Tell us how many tokens fit in your limits.
+title: "Limit data: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing! Fill in at least one of the two percentages.
+  - type: dropdown
+    id: plan
+    attributes:
+      label: Plan
+      options:
+        - Pro
+        - Max 5×
+        - Max 20×
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: Opus 5.5
+    validations:
+      required: true
+  - type: input
+    id: effort
+    attributes:
+      label: Effort
+      placeholder: medium
+  - type: input
+    id: tokens
+    attributes:
+      label: Fresh tokens
+      description: Input + output + cache writes, e.g. the `week` total from `pacr week`.
+      placeholder: 24.8M
+    validations:
+      required: true
+  - type: input
+    id: five-hour
+    attributes:
+      label: 5-hour limit %
+      placeholder: "3"
+  - type: input
+    id: weekly
+    attributes:
+      label: Weekly limit %
+      placeholder: "83"
+  - type: input
+    id: date
+    attributes:
+      label: Date
+      placeholder: "2026-11-05"
