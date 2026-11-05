@@ -13,17 +13,19 @@ Unofficial, local-only Claude Code usage tracker: tokens per hour/day/week/sessi
 - `src/analyze.js` — session stats, tips engine, plan fit. `src/reports.js` — all text reports (ansi or html via `util.setColorMode`). `monthData()` is pure (records + snapshots in, numbers out) so month logic is unit-tested without logs.
 - Claude Code deletes logs older than `cleanupPeriodDays` (default 30): anything comparing against older data must say it may be incomplete.
 - `src/install.js` — edits `statusLine` in `~/.claude/settings.json`, backs up the old one; writes `~/.claude/commands/pacr.md` (`/pacr`), marked with `<!-- installed by pacr -->` so a user's own file is never touched.
+- `src/tools.js` — `pacr tools`: tool result sizes (chars/4) from `tool_use`/`tool_result` blocks, grouped by tool + target (Bash by normalized command, Read by file), with suggestions.
+- `src/hooks.js` — opt-in PreToolUse hook (`pacr hooks install`). `pacr hook` rewrites only simple test/build commands to `(set -o pipefail; cmd 2>&1 | pacr filter "cmd")`, returns `updatedInput` without `permissionDecision` (never auto-approves), prints `{}` on anything else or any error. `pacr filter` keeps failures/errors/summary, ≤ ~150 lines. `pacr hooks off` = `hooks.enabled: false` in config, no settings edit. `bin/pacr.js` dispatches `hook`/`filter` before loading reports.
 - `vscode/extension.js` — status bar, report webview, alert popups. `scripts/build-vscode.js` copies `src/` and `bin/` into `vscode/` and packages a .vsix.
 
 ## Rules
 - Status line must stay fast (~140 ms warm on the maintainer's Mac, ~80 ms of that is Node start-up) and never exit non-zero or print to stderr; Claude Code cancels slow runs.
-- Never read credentials or make network calls. Read Claude Code files only; write only to `~/.pacr` (and settings.json + commands/pacr.md on install).
+- Never read credentials or make network calls. Read Claude Code files only; write only to `~/.pacr` (and settings.json + commands/pacr.md on install, settings.json hooks on `pacr hooks install`).
 - Limits are percentages from Claude Code; don't invent token caps per plan.
 - Cross-platform: Windows status line command is `node "<forward-slash path>" statusline`; notifications use osascript / notify-send / PowerShell toast (also from WSL).
 - In VS Code, `process.execPath` is Electron: child node processes need `ELECTRON_RUN_AS_NODE=1`.
 
 ## Test
-- `npm test` — generates fake logs + snapshots in a temp HOME and checks every command (30 tests). CI runs it on macOS/Linux/Windows × Node 18/20/22 (`.github/workflows/test.yml`).
+- `npm test` — generates fake logs + snapshots in a temp HOME and checks every command (43 tests). CI runs it on macOS/Linux/Windows × Node 18/20/22 (`.github/workflows/test.yml`).
 - `HOME=<tmp> PACR_HOME=<tmp>/.pacr node test/vscode-mock.js` — runs the extension against a mock `vscode`.
 - `node scripts/build-vscode.js --package` → `dist/pacr-x.y.z.vsix`.
 - Tested by hand on macOS (CLI, status line, /pacr; extension installed in VS Code + Cursor). Not yet on real Windows/Linux — CI is the first check there.

@@ -127,13 +127,31 @@ It works whether you run Claude Code in the terminal or in the Claude Code exten
 | `pacr branches` | Tokens per git branch — what a feature actually cost |
 | `pacr heatmap` | When in the week you burn the most |
 | `pacr tips` | Ranked ways to save tokens, from your own data |
+| `pacr tools [--days 7]` | Biggest tool results: Bash commands and files read, with what to do about each |
 | `pacr plan` | Limit hits, time spent waiting for resets, whether your plan fits |
 | `pacr summary` | Last week on one screen |
 | `pacr alerts` | Alert settings and recent alerts (`pacr alerts test` sends one) |
 | `pacr budget daily 3M` | Set your own daily or weekly token budget |
 | `pacr export --csv` | Raw data for Excel or Sheets |
+| `pacr hooks install` | Opt-in: trim test/build output to failures + summary (see below) |
 
 Run `pacr help` for every option.
+
+## Trim test and build output (opt-in)
+
+Tool results are sent back to the model as input, and test or build runs are often the biggest ones. `pacr tools` shows which commands and files cost you the most. `pacr hooks install` adds a [PreToolUse hook](https://code.claude.com/docs/en/costs) that trims test and build output before Claude sees it:
+
+- Only simple commands: `npm test`, `npm run test` / `npm run build`, the pnpm and yarn equivalents, `pytest`, `go test`, `cargo test`. Anything with pipes, `&&`, redirects or watch mode is left alone, and so is every other command.
+- Keeps failures, errors and the summary line, at most ~150 lines. Short output is passed through as is. Exit codes are kept.
+- Written in Node, so it works on Windows too. On any error the command runs unchanged. It never approves a command: your permission rules still apply.
+- Shows exactly what it adds to `settings.json` and asks first (`--yes` skips the question). settings.json is backed up to `settings.json.pacr-hooks.bak`.
+- Need the full output once? Prefix the command: `PACR_RAW=1 npm test`.
+
+```bash
+pacr hooks status      # on, off or not installed (also in pacr doctor)
+pacr hooks off         # quick disable, no settings.json edit (pacr hooks on to undo)
+pacr hooks uninstall   # remove it (pacr uninstall removes it too)
+```
 
 ## Alerts
 

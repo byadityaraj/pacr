@@ -257,6 +257,125 @@ test('csv export', () => {
   assert.match(o.split('\n')[0], /^timestamp,session,project,branch,model/);
 });
 
+test('tools: groups tool results by command and file, with suggestions', () => {
+  const T = require('../src/tools');
+  assert.strictEqual(T.normalizeCommand('cd app && CI=1 npm run test -- --ci 2>&1 | tail -50'), 'npm run test');
+  assert.strictEqual(T.normalizeCommand('python3 -m pytest -x tests/'), 'pytest');
+  assert.strictEqual(T.normalizeCommand('git diff HEAD~1 | head'), 'git diff');
+  assert.strictEqual(T.normalizeCommand('/usr/bin/grep -rn foo .'), 'grep');
+  // A session with known tool calls and results.
+  const dir = path.join(home, '.claude', 'projects', '-home-dev-tools');
+  fs.mkdirSync(dir, { recursive: true });
+  const lines = [];
+  let n = 0;
+  const call = (name, input, chars, ago = 3600000) => {
+    const id = `toolu_${++n}`;
+    const ts = new Date(now - ago).toISOString();
+    lines.push(JSON.stringify({ type: 'assistant', sessionId: 'tools-1', cwd: '/home/dev/tools', timestamp: ts, message: { id: `m_t${n}`, role: 'assistant', content: [{ type: 'tool_use', id, name, input }] } }));
+    lines.push(JSON.stringify({ type: 'user', sessionId: 'tools-1', cwd: '/home/dev/tools', timestamp: ts, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: n % 2 ? 'x'.repeat(chars) : [{ type: 'text', text: 'x'.repeat(chars) }] }] } }));
+  };
+  for (let i = 0; i < 3; i++) call('Bash', { command: `npm test -- --run ${i}` }, 40000);   // 10k tokens each
+  call('Read', { file_path: '/home/dev/tools/package-lock.json' }, 80000);                 // 20k
+  call('Read', { file_path: '/home/dev/tools/src/huge.js' }, 60000);                       // 15k
+  call('Bash', { command: 'ls' }, 400);
+  call('mcp__claude-in-chrome__browser_batch', {}, 800);
+  call('Bash', { command: 'npm test' }, 4000, 30 * 86400000);                              // outside --days 7
+  fs.writeFileSync(path.join(dir, 'tools-1.jsonl'), lines.join('\n') + '\n');
+  const rows = T.group(T.collect({ since: now - 7 * 86400000 }));
+  const npm = rows.find((r) => r.target === 'npm test');
+  assert.deepStrictEqual([npm.count, npm.avg, npm.total, npm.suggestion], [3, 10000, 30000, 'filter with pacr hooks']);
+  assert.strictEqual(rows.find((r) => r.target === 'tools/package-lock.json').suggestion, 'block with permissions.deny');
+  assert.strictEqual(rows.find((r) => r.target === 'tools/src/huge.js').suggestion, 'ask Claude to grep or read a range');
+  assert.strictEqual(rows.find((r) => r.target === 'ls').suggestion, '');
+  assert.ok(rows.find((r) => r.tool === 'MCP claude-in-chrome' && r.target === 'browser_batch'));
+  assert.strictEqual(rows[0].target, 'npm test');
+  const o = run(['tools']);
+  assert.match(o, /Biggest tool results/);
+  assert.match(o, /npm test\s+3\s+10k\s+30k\s+→ filter with pacr hooks/);
+  assert.match(o, /These \d+ rows: .* of .* fresh tokens/);
+});
+
+test('hook: rewrites only simple test/build commands; everything else passes through unchanged', () => {
+  const H = require('../src/hooks');
+  const on = { hooks: { enabled: true } };
+  const ev = (command, extra = {}) => JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command, description: 'x', ...extra } });
+  for (const c of ['npm test', 'npm run build', 'npm run test:unit -- --ci', 'pnpm test', 'pnpm run build', 'yarn build', 'pytest -x tests/', 'go test ./...', 'cargo test']) {
+    const o = JSON.parse(H.handle(ev(c), { cfg: on }));
+    assert.ok(o.hookSpecificOutput, c);
+    assert.strictEqual(o.hookSpecificOutput.hookEventName, 'PreToolUse');
+    assert.strictEqual(o.hookSpecificOutput.permissionDecision, undefined); // never auto-approves
+    assert.strictEqual(o.hookSpecificOutput.updatedInput.description, 'x');
+    assert.ok(o.hookSpecificOutput.updatedInput.command.startsWith(`(set -o pipefail; ${c} 2>&1 | `), c);
+  }
+  for (const c of ['ls -la', 'git diff', 'npm install', 'npm test; rm -rf /', 'npm test && echo hi', 'npm test | tail', 'npm test > out.txt',
+    'npm test $(whoami)', 'npm test -- --watch', 'PACR_RAW=1 npm test', 'cd app && npm test', 'npm test "a b"', 'pytest # c']) {
+    assert.strictEqual(H.handle(ev(c), { cfg: on }), '{}', c);
+  }
+  assert.strictEqual(H.handle(ev('npm test', { run_in_background: true }), { cfg: on }), '{}');
+  assert.strictEqual(H.handle(ev('npm test'), { cfg: { hooks: { enabled: false } } }), '{}');
+  assert.strictEqual(H.handle(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'a' } }), { cfg: on }), '{}');
+  for (const bad of ['', 'not json', '{"tool_name":"Bash"}', 'null']) assert.strictEqual(H.handle(bad, { cfg: on }), '{}');
+  // Through the real binary, as Claude Code runs it.
+  assert.strictEqual(run(['hook'], ev('git status')).trim(), '{}');
+  assert.strictEqual(run(['hook'], 'garbage').trim(), '{}');
+  assert.match(run(['hook'], ev('npm test')), /"updatedInput"/);
+});
+
+test('filter: failing test error lines and summary survive, output capped, exit code kept', () => {
+  const H = require('../src/hooks');
+  const out = [];
+  for (let i = 0; i < 400; i++) out.push(`  ✓ passes case ${i} (3 ms)`);
+  out.splice(200, 0, ' FAIL  src/cart.test.js', '  ● cart › applies discount', '', '    expect(received).toBe(expected)', '    Expected: 90', '    Received: 100', '      at Object.<anonymous> (src/cart.test.js:12:20)');
+  out.push('', 'Test Suites: 1 failed, 3 passed, 4 total', 'Tests:       1 failed, 399 passed, 400 total', 'Time:        2.1 s');
+  const kept = H.filterLines(out.join('\n'), { cmd: 'npm test' });
+  assert.ok(kept.length <= H.MAX_LINES + 5, `kept ${kept.length}`);
+  for (const l of [' FAIL  src/cart.test.js', '    Expected: 90', '    Received: 100', 'Tests:       1 failed, 399 passed, 400 total']) assert.ok(kept.includes(l), l);
+  assert.match(kept[kept.length - 1], /Full output: PACR_RAW=1 npm test/);
+  // Short output is left alone.
+  assert.deepStrictEqual(H.filterLines('a\nb\n'), ['a', 'b']);
+  // End to end through a shell: a failing command's exit code and error lines survive the pipe.
+  if (process.platform !== 'win32') {
+    const { spawnSync } = require('child_process');
+    const script = path.join(home, 'fake-test.sh');
+    fs.writeFileSync(script, `for i in $(seq 1 300); do echo "ok $i"; done; echo "Error: boom in test 7" >&2; echo "1 failed, 299 passed"; exit 3\n`);
+    const r = spawnSync('bash', ['-c', `(set -o pipefail; sh "${script}" 2>&1 | "${process.execPath}" "${BIN}" filter "npm test")`], { env, encoding: 'utf8' });
+    assert.strictEqual(r.status, 3);
+    assert.match(r.stdout, /Error: boom in test 7/);
+    assert.match(r.stdout, /1 failed, 299 passed/);
+    assert.ok(r.stdout.split('\n').length < 160);
+  }
+});
+
+test('hooks install / off / uninstall keep other settings; pacr uninstall removes the hook too', () => {
+  const sp = path.join(home, '.claude', 'settings.json');
+  const own = { matcher: 'Edit', hooks: [{ type: 'command', command: 'my-lint.sh' }] };
+  fs.writeFileSync(sp, JSON.stringify({ model: 'opus', hooks: { PreToolUse: [own] } }));
+  const noYes = require('child_process').spawnSync(process.execPath, [BIN, 'hooks', 'install'], { env, input: '', encoding: 'utf8' });
+  assert.match(noYes.stdout, /Not a terminal/); // no silent install without --yes
+  assert.strictEqual(noYes.status, 1);
+  assert.strictEqual(JSON.parse(fs.readFileSync(sp, 'utf8')).hooks.PreToolUse.length, 1);
+  const o = run(['hooks', 'install', '--yes']);
+  assert.match(o, /"PreToolUse"/);
+  assert.match(o, /Hook added/);
+  assert.ok(fs.existsSync(sp + '.pacr-hooks.bak'));
+  run(['hooks', 'install', '--yes']); // twice: still one entry
+  let s = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  assert.strictEqual(s.model, 'opus');
+  assert.strictEqual(s.hooks.PreToolUse.length, 2);
+  assert.deepStrictEqual(s.hooks.PreToolUse[0], own);
+  assert.match(s.hooks.PreToolUse[1].hooks[0].command, /pacr\.js" hook$/);
+  assert.match(run(['hooks', 'status']), /pacr hook: on/);
+  assert.match(run(['doctor']), /output filter hook: on/);
+  run(['hooks', 'off']);
+  assert.match(run(['hooks', 'status']), /installed but off/);
+  assert.strictEqual(run(['hook'], JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' } })).trim(), '{}');
+  run(['hooks', 'on']);
+  run(['uninstall']);
+  s = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  assert.deepStrictEqual(s.hooks, { PreToolUse: [own] });
+  assert.match(run(['hooks', 'status']), /not installed/);
+});
+
 console.log(`\n${pass} passed${process.exitCode ? ', some FAILED' : ''}`);
 if (!process.env.KEEP) fs.rmSync(home, { recursive: true, force: true });
 else console.log('test home kept at', home);

@@ -28,6 +28,15 @@ if (cmd === 'statusline') {
   require('../src/statusline').main();
   return;
 }
+// Hot paths for the opt-in PreToolUse hook (pacr hooks install): keep them free of report code.
+if (cmd === 'hook') {
+  require('../src/hooks').main();
+  return;
+}
+if (cmd === 'filter') {
+  require('../src/hooks').filterMain(rest[0] || '');
+  return;
+}
 
 util.setColorMode(process.env.NO_COLOR || flag('no-color') || !process.stdout.isTTY ? 'none' : 'ansi');
 if (flag('color')) util.setColorMode('ansi');
@@ -45,6 +54,7 @@ const HELP = `pacr ${pkg.version} — Claude Code usage tracker (unofficial, loc
   pacr branches [--days 30]   tokens per git branch (cost of a feature)
   pacr heatmap [--weeks 4]    which hours you burn the most
   pacr tips [--days 7]    ways to save tokens, from your own data
+  pacr tools [--days 7]   biggest tool results (Bash commands, files read) + what to do
   pacr plan [--days 28]   limit hits and whether your plan fits
   pacr summary [--this]   weekly summary (last week by default)
   pacr alerts             alert settings + recent alerts
@@ -54,7 +64,9 @@ const HELP = `pacr ${pkg.version} — Claude Code usage tracker (unofficial, loc
   pacr export [--csv|--json] [--days 30] [--out file]
   pacr watch              background loop for alerts when Claude Code is closed
   pacr install [--refresh 30]   add the status line to Claude Code
-  pacr uninstall          remove it (restores your previous one)
+  pacr uninstall          remove it (restores your previous one, removes the hook)
+  pacr hooks install [--yes]   opt-in hook: trim test/build output to failures + summary
+  pacr hooks status | off | on | uninstall
   pacr doctor             check setup
 
 Data: reads ~/.claude/projects/*.jsonl, writes only to ~/.pacr. No network, no credentials.`;
@@ -97,6 +109,8 @@ function main() {
     case 'branches': return out(r.branches({ days: num('days', 30) }));
     case 'heatmap': return out(r.heatmap({ weeks: num('weeks', 4) }));
     case 'tips': return out(r.tips({ days: num('days', 7) }));
+    case 'tools': return out(r.tools({ days: num('days', 7), top: num('top', 15) }));
+    case 'hooks': return hooksCmd();
     case 'plan': return out(r.plan({ days: num('days', 28) }));
     case 'summary':
       if (flag('notify')) { r.summaryNotify(); return; }
@@ -140,6 +154,8 @@ function main() {
     case 'uninstall': {
       const res = require('../src/install').uninstall();
       out(res.msg);
+      const h = require('../src/hooks').uninstall();
+      if (h.removed) out(h.msg);
       if (!res.ok) process.exitCode = 1;
       return;
     }
@@ -153,6 +169,47 @@ function main() {
       out(`Unknown command "${cmd}".\n`);
       out(HELP);
       process.exitCode = 1;
+  }
+}
+
+function hooksCmd() {
+  const hooks = require('../src/hooks');
+  const sub = positional[0] || 'status';
+  const report = (res) => { out(res.msg); if (!res.ok) process.exitCode = 1; };
+  switch (sub) {
+    case 'install': {
+      const st = hooks.status();
+      out(`pacr will add this PreToolUse hook to ${st.path}:\n`);
+      out(hooks.preview());
+      out(`\nBefore simple test/build commands (npm test, npm run build, pnpm/yarn test|build, pytest, go test,
+cargo test) run, it pipes their output through a filter that keeps failures, errors and the summary
+(max ~${hooks.MAX_LINES} lines). Exit codes are kept. Other commands are never touched; on any error the command
+runs unchanged. Your permission rules still apply. Full output: prefix the command with PACR_RAW=1.
+settings.json is backed up first. Quick disable: pacr hooks off · remove: pacr hooks uninstall\n`);
+      if (flag('yes') || flag('y')) return report(hooks.install());
+      if (!process.stdin.isTTY) { out('Not a terminal: run  pacr hooks install --yes  to confirm.'); process.exitCode = 1; return; }
+      const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+      rl.question('Add it? [y/N] ', (a) => {
+        rl.close();
+        if (/^y(es)?$/i.test(a.trim())) report(hooks.install());
+        else out('Nothing changed.');
+      });
+      return;
+    }
+    case 'uninstall': case 'remove': return report(hooks.uninstall());
+    case 'off': hooks.setEnabled(false); return out('pacr hook off: commands run unfiltered. Turn back on: pacr hooks on');
+    case 'on': {
+      hooks.setEnabled(true);
+      const st = hooks.status();
+      return out(st.installed ? 'pacr hook on.' : 'pacr hook enabled, but not installed yet: run pacr hooks install');
+    }
+    case 'status': {
+      const st = hooks.status();
+      if (st.error) return out(`Couldn't read ${st.path}: ${st.error}`);
+      return out(!st.installed ? 'pacr hook: not installed (pacr hooks install)'
+        : st.enabled ? `pacr hook: on  ${util.c('d', st.path)}` : 'pacr hook: installed but off (pacr hooks on)');
+    }
+    default: out('Usage: pacr hooks install [--yes] | status | off | on | uninstall'); process.exitCode = 1;
   }
 }
 
@@ -213,6 +270,8 @@ function doctor() {
   out(`${inst.installed ? ok(true) : warn} status line: ${inst.installed ? 'installed' : 'not installed (run: pacr install)'}  ${util.c('d', inst.path)}`);
   if (inst.error) out(`${ok(false)} settings.json: ${inst.error}`);
   if (inst.slash) out(`${inst.slash.exists ? ok(true) : warn} /pacr command: ${inst.slash.exists ? (inst.slash.ours ? 'installed' : 'your own file') : 'not installed (run: pacr install)'}  ${util.c('d', inst.slash.path)}`);
+  const hk = require('../src/hooks').status();
+  out(`${hk.active ? ok(true) : util.c('d', '·')} output filter hook: ${hk.active ? 'on' : hk.installed ? 'installed but off (pacr hooks on)' : 'off (optional: pacr hooks install)'}`);
   const latest = snapshots.latest();
   if (!latest) out(`${warn} limit data: none yet (appears after the status line runs in a Pro/Max session)`);
   else if (latest.f == null && latest.w == null) out(`${warn} limit data: status line runs, but no 5h/weekly limits (API-key login or before the first reply)`);

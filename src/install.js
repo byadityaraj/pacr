@@ -19,7 +19,7 @@ function command(platform = process.platform) {
 const SLASH_MARKER = '<!-- installed by pacr -->';
 const SLASH_COMMAND = `---
 description: Show Claude Code token usage and limits from pacr
-argument-hint: "[today | yesterday | week | month | sessions | tips | plan | alerts | doctor | ...]"
+argument-hint: "[today | yesterday | week | month | sessions | tips | tools | plan | alerts | doctor | ...]"
 allowed-tools: Bash(pacr:*)
 ---
 ${SLASH_MARKER}

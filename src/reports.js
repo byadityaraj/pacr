@@ -334,6 +334,31 @@ function tips({ days = 7, now = Date.now() } = {}) {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------- tool results
+function tools({ days = 7, top = 15, now = Date.now() } = {}) {
+  const T = require('./tools');
+  const since = now - days * DAY;
+  const rows = T.group(T.collect({ since }));
+  const lines = [c('w', `Biggest tool results · last ${days} days`) + c('d', ' · tokens estimated as chars/4'), ''];
+  if (!rows.length) { lines.push(c('d', 'No tool calls found yet.')); return lines.join('\n'); }
+  const shown = rows.slice(0, top);
+  lines.push(table(['Tool', 'Target', 'Calls', 'Avg', 'Total', 'Suggestion'], shown.map((r) => [
+    t(r.tool), t(r.target.length > 48 ? '…' + r.target.slice(-47) : r.target), String(r.count), fmtTok(r.avg), c('w', fmtTok(r.total)), r.suggestion ? c('c', '→ ' + r.suggestion) : ''
+  ]), ['', '', 'r', 'r', 'r']));
+  const { records } = logs.scan({ since });
+  const fresh = records.reduce((x, r) => x + tot(r, false), 0);
+  const topSum = shown.reduce((x, r) => x + r.total, 0);
+  const allSum = rows.reduce((x, r) => x + r.total, 0);
+  const pct = (n) => (fresh ? `${Math.round((n / fresh) * 100)}%` : '—');
+  lines.push('');
+  lines.push(`These ${shown.length} rows: ${c('w', fmtTok(topSum))} ≈ ${c('w', pct(topSum))} of ${fmtTok(fresh)} fresh tokens` +
+    c('d', ` · all tool results: ${fmtTok(allSum)} (${pct(allSum)})`));
+  lines.push(c('d', 'Each result is sent once as new input (then cached), so this is a rough share, not an exact one.'));
+  if (shown.some((r) => r.suggestion === 'filter with pacr hooks')) lines.push(c('d', 'pacr hooks install: trims test/build output to failures + summary.'));
+  if (shown.some((r) => r.suggestion === 'block with permissions.deny')) lines.push(c('d', 'permissions.deny in settings.json, e.g. "Read(./package-lock.json)", "Read(./dist/**)".'));
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------- plan fit
 function plan({ days = 28, now = Date.now() } = {}) {
   const since = now - days * DAY;
@@ -575,8 +600,8 @@ function overview({ now = Date.now() } = {}) {
   if (st.snapAgeMs != null && st.snap && (st.snap.f != null || st.snap.w != null)) lines.push(c('d', `limits as of ${fmtDur(st.snapAgeMs)} ago (from the status line)`));
   if (!st.snap) lines.push(c('d', 'No limit data yet: run `pacr install` to add the status line.'));
   lines.push('');
-  lines.push(c('d', 'more: pacr today | week | month | sessions | branches | heatmap | tips | plan | alerts | help'));
+  lines.push(c('d', 'more: pacr today | week | month | sessions | branches | heatmap | tips | tools | plan | alerts | help'));
   return lines.join('\n');
 }
 
-module.exports = { today, week, month, monthData, monthRange, sessions, session, branches, heatmap, tips, plan, summary, summaryNotify, alertsView, overview };
+module.exports = { today, week, month, monthData, monthRange, sessions, session, branches, heatmap, tips, tools, plan, summary, summaryNotify, alertsView, overview };

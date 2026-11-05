@@ -89,7 +89,7 @@ function showNewAlerts() {
 // ---------------- report panel ----------------
 const SECTIONS = [
   ['overview', 'Now'], ['today', 'Today'], ['week', 'Week'], ['month', 'Month'], ['sessions', 'Sessions'], ['branches', 'Branches'],
-  ['heatmap', 'Heatmap'], ['tips', 'Tips'], ['plan', 'Plan'], ['summary', 'Last week'], ['alerts', 'Alerts']
+  ['heatmap', 'Heatmap'], ['tips', 'Tips'], ['tools', 'Tools'], ['plan', 'Plan'], ['summary', 'Last week'], ['alerts', 'Alerts']
 ];
 
 function renderSection(name) {
@@ -104,6 +104,7 @@ function renderSection(name) {
       case 'branches': return r.branches();
       case 'heatmap': return r.heatmap();
       case 'tips': return r.tips();
+      case 'tools': return r.tools();
       case 'plan': return r.plan();
       case 'summary': return r.summary();
       case 'alerts': return r.alertsView();
