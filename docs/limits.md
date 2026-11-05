@@ -28,8 +28,12 @@ Only Opus 5.5 was measured. The other models are scaled from that measurement by
 - The numbers are for one plan. Pro, Max 5×, Max 20× and Team seats differ a lot.
 - Effort doesn't change tokens per 1%, only how many tokens a task uses.
 - Cache reads aren't in the fresh count but still use the limit, so long sessions use it faster than the fresh number suggests.
-- Claude Code passes whole-number percentages. Readings so far suggest it drops the decimal (2.7% → 2%), while claude.ai/settings/usage rounds (→ 3%), so pacr can show 1% less than the usage page. That's expected, not a bug. If it truncates, "1%" likely means 1–1.99%, so 255k at 1% means roughly 13M–26M per week. The 24.8M at 83% reading is the more reliable one: it barely moves either way (about 29.5–30M). Bigger percentages give better estimates.
+- Claude Code passes whole-number percentages. Readings so far suggest it drops the decimal (2.7% → 2%), while claude.ai/settings/usage rounds (→ 3%), so its raw number can be 1% less than the usage page. If it truncates, "1%" likely means 1–1.99%, so 255k at 1% means roughly 13M–26M per week. The 24.8M at 83% reading is the more reliable one: it barely moves either way (about 29.5–30M). Bigger percentages give better estimates.
 - Limits can change at any time. This is not official and not affiliated with Anthropic.
+
+## pacr's decimal estimate
+
+When Claude Code's whole number goes up (2 → 3), the real value was about 3.0% at that moment, so the fresh tokens between two such steps tell pacr how many tokens make 1%, and the tokens since the last step give the decimal (rounded like claude.ai, shown as `~3%` when it differs). It's kept between n and n + 0.99, so it's never more than 1% off; alerts still use Claude Code's own number, and `pacr doctor` / `pacr json` show both. On first run pacr learns from the snapshots and logs of the last 8 days (`pacr estimate --backfill` shows what it found); tokens per 1% can vary several-fold between windows, which the clamp absorbs.
 
 ## Measure your own
 

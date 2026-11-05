@@ -1,6 +1,6 @@
 {
   "name": "pacr",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Unofficial, privacy-first Claude Code usage tracker: tokens per hour/day/week, 5-hour and weekly limits, burn rate, smart tips and alerts. Terminal status line + VS Code.",
   "author": "Aditya Raj",
   "homepage": "https://github.com/byadityaraj/pacr#readme",

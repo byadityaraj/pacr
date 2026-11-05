@@ -68,6 +68,7 @@ const HELP = `pacr ${pkg.version} — Claude Code usage tracker (unofficial, loc
   pacr hooks install [--yes]   opt-in hook: trim test/build output to failures + summary
   pacr hooks status | off | on | uninstall
   pacr doctor             check setup
+  pacr estimate --backfill    relearn the limit % decimal estimate from saved snapshots + logs
 
 Data: reads ~/.claude/projects/*.jsonl, writes only to ~/.pacr. No network, no credentials.`;
 
@@ -160,9 +161,13 @@ function main() {
       return;
     }
     case 'doctor': return doctor();
+    case 'estimate': return estimateCmd();
     case 'json': {
       const st = require('../src/state').getState({});
       delete st.cfg;
+      // Both numbers: raw from Claude Code (whole, decimal dropped) and pacr's decimal estimate.
+      const lim = (raw, e) => (raw == null ? null : { raw, estimate: e ? e.value : null, shown: e ? e.shown : raw, tokensPerPct: e ? e.perPct : null });
+      st.limits = { fiveHour: lim(st.snap && st.snap.f, st.est.f), weekly: lim(st.snap && st.snap.w, st.est.w) };
       return out(JSON.stringify(st, null, 2));
     }
     default:
@@ -254,6 +259,22 @@ function watch() {
   setInterval(tick, every);
 }
 
+function estimateCmd() {
+  const E = require('../src/estimate');
+  if (!flag('backfill')) { out('Usage: pacr estimate --backfill'); process.exitCode = 1; return; }
+  const res = E.backfill();
+  if (flag('quiet')) return;
+  out(`Replayed ${res.snapshots} snapshots since ${util.fmtDay(res.since)} ${util.fmtHM(res.since)} (max per window: lower stale-session values ignored).`);
+  for (const [key, label] of [['f', '5-hour'], ['w', 'weekly']]) {
+    const f = res.found[key];
+    out(`\n${label}: ${f.steps} step${f.steps === 1 ? '' : 's'} up, tokens per 1%: ${f.perPct ? '~' + util.fmtTok(f.perPct) : 'not enough steps yet'}`);
+    for (const w of f.windows) {
+      out(`  window ending ${util.fmtDay(w.resetAt)} ${util.fmtHM(w.resetAt)}: ${w.steps} step${w.steps === 1 ? '' : 's'}` +
+        (w.rates.length ? `, per 1%: ${w.rates.map((x) => util.fmtTok(x)).join(', ')}` : ''));
+    }
+  }
+}
+
 function doctor() {
   const paths = require('../src/paths');
   const logs = require('../src/logs');
@@ -276,7 +297,16 @@ function doctor() {
   const latest = snapshots.latest();
   if (!latest) out(`${warn} limit data: none yet (appears after the status line runs in a Pro/Max session)`);
   else if (latest.f == null && latest.w == null) out(`${warn} limit data: status line runs, but no 5h/weekly limits (API-key login or before the first reply)`);
-  else out(`${ok(true)} limit data: 5h ${util.fmtPct(latest.f)}, week ${util.fmtPct(latest.w)} — from last Claude Code reply, ${util.fmtDur(Date.now() - (latest.lr || latest.t))} ago`);
+  else {
+    out(`${ok(true)} limit data: 5h ${util.fmtPct(latest.f)}, week ${util.fmtPct(latest.w)} — from last Claude Code reply, ${util.fmtDur(Date.now() - (latest.lr || latest.t))} ago`);
+    let est = {};
+    try { est = require('../src/state').getState({}).est || {}; } catch { /* ignore */ }
+    const e = (label, raw, x) => (raw == null ? null : x
+      ? `${label} ${raw}% raw → ~${x.value.toFixed(2)}% est. (shows ${x.shown}%, ~${util.fmtTok(x.perPct)} tokens per 1%)`
+      : `${label} ${raw}% raw, no estimate yet`);
+    const parts = [e('5h', latest.f, est.f), e('week', latest.w, est.w)].filter(Boolean);
+    out(`${util.c('d', '·')} decimal estimate: ${parts.join(' · ')}  ${util.c('d', '(Claude Code drops the decimal; needs one full 1% step)')}`);
+  }
   const n = require('../src/notify');
   const method = process.platform === 'darwin' ? 'osascript' : process.platform === 'win32' ? 'PowerShell toast' : n.isWSL() ? 'PowerShell toast (WSL)' : 'notify-send';
   out(`${ok(true)} notifications: ${method}  ${util.c('d', '(test: pacr alerts test)')}`);

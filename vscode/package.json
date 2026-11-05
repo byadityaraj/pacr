@@ -2,7 +2,7 @@
   "name": "pacr",
   "displayName": "pacr — Claude Code usage",
   "description": "Unofficial, local-only Claude Code usage tracker: tokens per hour/day/week, 5-hour and weekly limits, burn rate, tips and alerts in your status bar.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "pacr",
   "license": "MIT",
   "engines": {

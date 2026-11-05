@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — 2026-11-05
+
+### New
+- Decimal estimate for the 5-hour and weekly limit %. Claude Code passes whole numbers and appears to drop the decimal (2.7% → 2%), while claude.ai rounds (→ 3%). pacr learns tokens per 1% from the moments the number goes up, adds the tokens since the last step, and shows the result rounded like claude.ai, marked `~3%` when it differs from Claude Code's number. It stays between n and n + 0.99, so it's never more than 1% off. Bars and colours use it; alerts still use Claude Code's own number.
+- On first run it learns from the last 8 days of snapshots and logs in the background (stale lower numbers from idle sessions are ignored). `pacr estimate --backfill` runs it again and shows the steps and tokens per 1% it found.
+- `pacr doctor` and `pacr json` (`limits.fiveHour` / `limits.weekly`) show both the raw number and the estimate.
+
+### Docs
+- README troubleshooting and [docs/limits.md](docs/limits.md): why pacr's % can differ from claude.ai/settings/usage by 1%.
+
 ## 0.2.0 — 2026-11-05
 
 ### New

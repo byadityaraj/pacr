@@ -11,7 +11,7 @@ const { generate } = require('./gen');
 const now = Date.now();
 const { expected, weekReset } = generate(home, now);
 const BIN = path.join(__dirname, '..', 'bin', 'pacr.js');
-const env = { ...process.env, HOME: home, USERPROFILE: home, PACR_NO_NOTIFY: '1', PACR_HOME: path.join(home, '.pacr'), NO_COLOR: '' };
+const env = { ...process.env, HOME: home, USERPROFILE: home, PACR_NO_NOTIFY: '1', PACR_NO_BACKFILL: '1', PACR_HOME: path.join(home, '.pacr'), NO_COLOR: '' };
 delete env.CLAUDE_CONFIG_DIR;
 delete env.CLAUDE_PROJECT_DIR;
 delete env.XDG_CONFIG_HOME;
@@ -288,6 +288,119 @@ test('limits: two sessions in the same window keep the highest %, a new window r
   assert.match(o, /5h .* 2% resets/);
   assert.match(o, /limits from last Claude Code reply, \d+m ago/);
   assert.doesNotMatch(o, /limits as of/);
+});
+
+test('estimate: a 2 → 3 step with known tokens gives tokens per 1% and the decimal', () => {
+  const E = require('../src/estimate');
+  const r = now + 4 * 86400000;
+  let st = E.observe(null, 1, r, 0, now - 3000);          // first sighting: no step moment yet
+  assert.strictEqual(E.estimate(st, 1, r, 50000), null);
+  st = E.observe(st, 2, r, 100000, now - 2000);           // 1 → 2: real ~2.0% now, still no rate
+  assert.strictEqual(E.estimate(st, 2, r, 150000), null);  // no history at all: no estimate
+  st = E.observe(st, 3, r, 400000, now - 1000);           // 2 → 3 took 300k fresh tokens
+  assert.deepStrictEqual(st.rates, [300000]);
+  const e = E.estimate(st, 3, r, 400000 + 210000);         // 210k since the step = 0.7%
+  assert.deepStrictEqual([e.raw, e.value, e.shown, e.approx, e.perPct], [3, 3.7, 4, true, 300000]);
+  const low = E.estimate(st, 3, r, 400000 + 60000);        // 3.2% shows as 3%, no "~"
+  assert.deepStrictEqual([low.value, low.shown, low.approx], [3.2, 3, false]);
+  assert.strictEqual(E.observe(st, 2, r, 900000, now), st); // a stale lower number changes nothing
+  assert.deepStrictEqual(E.display(3, e), { pct: 3.7, text: '~4%' });
+  assert.deepStrictEqual(E.display(3, null), { pct: 3, text: null });
+});
+
+test('estimate: clamped to [n, n + 0.99], never at or past 100', () => {
+  const E = require('../src/estimate');
+  const r = now + 3600000;
+  let st = E.observe(null, 5, r, 0, now - 2000);
+  st = E.observe(st, 6, r, 100000, now - 1000);
+  st = E.observe(st, 7, r, 200000, now);                  // 100k per 1%
+  assert.strictEqual(E.estimate(st, 7, r, 200000 + 5000000).value, 7.99); // far past the next step
+  assert.strictEqual(E.estimate(st, 7, r, 200000).value, 7);
+  assert.strictEqual(E.estimate({ ...st, n: 100 }, 100, r, 900000), null);
+});
+
+test('estimate: a new window starts over but keeps earlier windows as history', () => {
+  const E = require('../src/estimate');
+  const r1 = now + 3600000;
+  const r2 = r1 + 5 * 3600000;
+  let st = E.observe(null, 1, r1, 0, now - 3000);
+  st = E.observe(st, 2, r1, 80000, now - 2000);
+  st = E.observe(st, 3, r1, 160000, now - 1000);          // 80k per 1% in window 1
+  assert.ok(E.estimate(st, 3, r1, 200000));
+  const st2 = E.observe(st, 0, r2, 0, now);               // reset
+  assert.deepStrictEqual([st2.n, st2.at, st2.rates, st2.hist], [0, null, [], [80000]]);
+  assert.strictEqual(E.estimate(st2, 0, r2, 40000), null); // no step in the new window yet
+  assert.strictEqual(E.estimate(st, 3, r2, 200000), null); // old window's state never used for the new one
+  assert.strictEqual(E.observe(st2, 3, r1, 999, now), st2); // an older window can't come back
+  const st3 = E.observe(st2, 1, r2, 50000, now + 1000);    // first step: falls back to history
+  const e = E.estimate(st3, 1, r2, 50000 + 40000);
+  assert.deepStrictEqual([e.value, e.shown, e.perPct], [1.5, 2, 80000]);
+});
+
+test('estimate backfill: replays snapshots, stale lower values are never steps', () => {
+  const E = require('../src/estimate');
+  const w1 = now - 3 * 86400000;
+  const w2 = now + 4 * 86400000;
+  const fr = now + 3600000;
+  const snaps = [
+    { t: now - 9000, w: 1, wr: w1 },
+    { t: now - 8000, w: 2, wr: w1 },   // step (anchor)
+    { t: now - 7500, w: 1, wr: w1 },   // idle session's stale number: ignored
+    { t: now - 7000, w: 2, wr: w1 },   // back to 2: not a step
+    { t: now - 6000, w: 3, wr: w1 },   // step: 200k since 2
+    { t: now - 5000, w: 0, wr: w2, f: 4, fr },  // new week
+    { t: now - 4000, w: 1, wr: w2, f: 5, fr },
+    { t: now - 3500, w: 3, wr: w1, f: 4, fr },  // a session still on the old week: ignored
+    { t: now - 3000, w: 2, wr: w2, f: 6, fr }   // 300k since 1 → 2
+  ];
+  const records = [
+    { ts: now - 7800, tok: 50000 }, { ts: now - 7200, tok: 150000 },
+    { ts: now - 4500, tok: 100000 }, { ts: now - 3200, tok: 300000 }
+  ];
+  const res = E.replay(snaps, records);
+  assert.deepStrictEqual([res.found.w.steps, res.found.w.windows.length], [4, 2]);
+  assert.deepStrictEqual(res.found.w.windows.map((w) => w.rates), [[200000], [300000]]);
+  assert.deepStrictEqual(res.w.hist, [200000]);
+  assert.deepStrictEqual([res.w.n, res.w.at, res.w.rates], [2, now - 3000, [300000]]);
+  assert.strictEqual(res.found.w.perPct, 300000);
+  assert.deepStrictEqual([res.found.f.steps, res.found.f.perPct], [2, 300000]); // 4 → 5 → 6, stale 4 in between ignored
+});
+
+test('estimate backfill: pacr estimate --backfill reports and marks it done', () => {
+  const o = run(['estimate', '--backfill']);
+  assert.match(o, /^Replayed \d+ snapshots since /);
+  assert.match(o, /5-hour: \d+ steps? up, tokens per 1%: /);
+  assert.match(o, /weekly: \d+ steps? up, tokens per 1%: /);
+  const saved = JSON.parse(fs.readFileSync(path.join(env.PACR_HOME, 'estimate.json'), 'utf8'));
+  assert.ok(saved.backfilled > 0 && saved.backfillStarted == null);
+  assert.strictEqual(run(['estimate', '--backfill', '--quiet']), '');
+});
+
+test('estimate: status line marks "~", json and doctor show raw and estimate, alerts stay on raw', () => {
+  const ph = env.PACR_HOME;
+  const fr = now + 2 * 3600000;
+  const wr = now + 5 * 86400000;
+  // Window tokens come from the logs; put a step into the saved state just before now.
+  const roll = JSON.parse(fs.readFileSync(path.join(ph, 'rollup.json'), 'utf8'));
+  const E = require('../src/estimate');
+  const tokW = E.windowTokens(roll, 'w', wr, now);
+  assert.ok(tokW > 300000, 'generator has tokens this week');
+  const wState = { win: Math.round(wr / 300000), r: wr, n: 2, at: now - 1000, tok: tokW - 270000, rates: [300000], hist: [] };
+  fs.writeFileSync(path.join(ph, 'estimate.json'), JSON.stringify({ w: wState }));
+  fs.rmSync(path.join(ph, 'latest.json'), { force: true });
+  const sl = JSON.stringify({
+    session_id: 'est-1', model: { id: 'claude-opus-4-8', display_name: 'Opus' }, workspace: { current_dir: '/x' },
+    rate_limits: { five_hour: { used_percentage: 9, resets_at: Math.floor(fr / 1000) }, seven_day: { used_percentage: 2, resets_at: Math.floor(wr / 1000) } }
+  });
+  const strip = (x) => x.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.match(strip(run(['statusline'], sl)), /5h .* 9% resets .*week .* ~3% resets/); // 2 + 0.9 → ~3%
+  const j = JSON.parse(run(['json']));
+  assert.deepStrictEqual([j.limits.weekly.raw, j.limits.weekly.estimate, j.limits.weekly.shown], [2, 2.9, 3]);
+  assert.deepStrictEqual([j.limits.fiveHour.raw, j.limits.fiveHour.estimate], [9, null]);
+  assert.match(strip(run(['doctor'])), /decimal estimate: 5h 9% raw, no estimate yet · week 2% raw → ~2\.90% est\. \(shows 3%/);
+  // Alerts read st.snap, which keeps Claude Code's number; the estimate lives only in st.est.
+  const st = require('../src/state').getState({});
+  assert.deepStrictEqual([st.snap.w, st.est.w.shown], [2, 3]);
 });
 
 test('fmtPct: one decimal under 10% when there is one, whole numbers otherwise', () => {

@@ -3,6 +3,7 @@
 const config = require('./config');
 const logs = require('./logs');
 const snapshots = require('./snapshots');
+const estimate = require('./estimate');
 const { startOfDay, DAY } = require('./util');
 
 const BURN_LOOKBACK_MS = 30 * 60000;
@@ -73,6 +74,10 @@ function getState({ input = null, now = Date.now(), minScanIntervalMs = 5000 } =
     session: snap && snap.sid && roll.s[snap.sid] ? roll.s[snap.sid][0] - roll.s[snap.sid][1] : null
   };
 
+  // Decimal estimate of the whole-number limit %. Steps are recorded only from fresh status line input.
+  let est = { f: null, w: null };
+  try { est = estimate.forSnap(snap, roll, now, !!input); } catch { /* ignore */ }
+
   const history = snap ? snapshots.readRecent(now - BURN_LOOKBACK_MS - 60000) : [];
   const burn = burnRate(snap, history, now);
 
@@ -81,7 +86,7 @@ function getState({ input = null, now = Date.now(), minScanIntervalMs = 5000 } =
     weekly: cfg.budget && cfg.budget.weekly ? { limit: cfg.budget.weekly, used: tokens.week, pct: (tokens.week / cfg.budget.weekly) * 100 } : null
   };
 
-  return { now, cfg, snap, snapAgeMs, tokens, burn, budget, tip: quickTip(snap) };
+  return { now, cfg, snap, est, snapAgeMs, tokens, burn, budget, tip: quickTip(snap) };
 }
 
 module.exports = { getState, burnRate, quickTip };

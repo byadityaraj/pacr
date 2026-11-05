@@ -10,14 +10,16 @@ let panel;
 
 function cfg() { return vscode.workspace.getConfiguration('pacr'); }
 const { fmtTok, fmtDur, fmtHM, fmtPct } = tp.util;
+// Claude Code's whole-number %, or pacr's decimal estimate rounded like claude.ai ("~3%").
+const pct = (raw, e) => (e && e.approx ? `~${e.shown}%` : fmtPct(raw));
 
 function statusText(st) {
   const parts = [`$(pulse) ${fmtTok(st.tokens.hour)}/h`, `${fmtTok(st.tokens.today)} today`];
   if (cfg().get('showWeekTokens')) parts.push(`${fmtTok(st.tokens.week)} wk`);
   const s = st.snap;
   if (cfg().get('showLimits') && s) {
-    if (s.f != null) parts.push(`5h ${fmtPct(s.f)}`);
-    if (s.w != null) parts.push(`wk ${fmtPct(s.w)}`);
+    if (s.f != null) parts.push(`5h ${pct(s.f, st.est && st.est.f)}`);
+    if (s.w != null) parts.push(`wk ${pct(s.w, st.est && st.est.w)}`);
   }
   if (st.burn && st.burn.willHit && s && s.f >= 50) parts.push(`$(warning) ~${fmtDur(st.burn.minsToFull * 60000)}`);
   return parts.join(' · ');
@@ -37,8 +39,8 @@ function tooltip(st) {
   if (st.budget.daily) md.appendMarkdown(`| daily budget | ${Math.round(st.budget.daily.pct)}% of ${fmtTok(st.budget.daily.limit)} |\n`);
   md.appendMarkdown('\n');
   if (s && (s.f != null || s.w != null)) {
-    if (s.f != null) md.appendMarkdown(`**5-hour:** ${fmtPct(s.f)} · resets ${fmtHM(s.fr)} (in ${fmtDur(s.fr - now)})  \n`);
-    if (s.w != null) md.appendMarkdown(`**Weekly:** ${fmtPct(s.w)} · resets in ${fmtDur(s.wr - now)}  \n`);
+    if (s.f != null) md.appendMarkdown(`**5-hour:** ${pct(s.f, st.est && st.est.f)} · resets ${fmtHM(s.fr)} (in ${fmtDur(s.fr - now)})  \n`);
+    if (s.w != null) md.appendMarkdown(`**Weekly:** ${pct(s.w, st.est && st.est.w)} · resets in ${fmtDur(s.wr - now)}  \n`);
     if (st.burn && st.burn.willHit) md.appendMarkdown(`$(warning) At this pace you hit the 5-hour limit in ~${fmtDur(st.burn.minsToFull * 60000)}  \n`);
     if (st.tip && (s.f >= st.cfg.warnPct || (st.burn && st.burn.willHit))) md.appendMarkdown(`$(lightbulb) ${st.tip}  \n`);
     if (st.snapAgeMs != null) md.appendMarkdown(`\n_limits from last Claude Code reply, ${fmtDur(st.snapAgeMs)} ago_\n`);

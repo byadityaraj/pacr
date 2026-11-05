@@ -6,6 +6,7 @@
 const { getState } = require('./state');
 const snapshots = require('./snapshots');
 const alerts = require('./alerts');
+const { display } = require('./estimate');
 const { c, bar, fmtTok, fmtDur, fmtUsd, fmtPct, levelColor, setColorMode } = require('./util');
 
 function tokenLine(st) {
@@ -23,15 +24,16 @@ function tokenLine(st) {
 
 function limitsLine(st) {
   const { snap, now, cfg } = st;
+  const est = st.est || {};
   const out = [];
-  if (snap && snap.f != null) {
-    const col = levelColor(snap.f, cfg);
-    out.push(`5h ${bar(snap.f, 10, col)} ${c(col, fmtPct(snap.f))} ${c('d', 'resets ' + fmtDur(snap.fr - now))}`);
-  }
-  if (snap && snap.w != null) {
-    const col = levelColor(snap.w, cfg);
-    out.push(`week ${bar(snap.w, 10, col)} ${c(col, fmtPct(snap.w))} ${c('d', 'resets ' + fmtDur(snap.wr - now))}`);
-  }
+  // Bars and % use the decimal estimate when there is one ("~3%" when it differs from Claude Code's number).
+  const limit = (label, raw, resetAt, e) => {
+    const d = display(raw, e);
+    const col = levelColor(d.pct, cfg);
+    return `${label} ${bar(d.pct, 10, col)} ${c(col, d.text || fmtPct(raw))} ${c('d', 'resets ' + fmtDur(resetAt - now))}`;
+  };
+  if (snap && snap.f != null) out.push(limit('5h', snap.f, snap.fr, est.f));
+  if (snap && snap.w != null) out.push(limit('week', snap.w, snap.wr, est.w));
   if (out.length) return out.join(c('d', '  │  '));
   // API-key users (no subscription limits): show context and session cost instead.
   const extra = [];
