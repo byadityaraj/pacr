@@ -34,7 +34,9 @@ Only Opus 5.5 was measured. The other models are scaled from that measurement by
 
 ## pacr's decimal estimate
 
-When Claude Code's whole number goes up (2 → 3), the real value was about 3.0% at that moment, so the fresh tokens between two such steps tell pacr how many tokens make 1%, and the tokens since the last step give the decimal (rounded like claude.ai, shown as `~3%` when it differs). It's kept between n and n + 0.99, so it's never more than 1% off; alerts still use Claude Code's own number, and `pacr doctor` / `pacr json` show both. On first run pacr learns from the snapshots and logs of the last 8 days (`pacr estimate --backfill` shows what it found); tokens per 1% can vary several-fold between windows, which the clamp absorbs.
+When Claude Code's whole number goes up (2 → 3), the real value was about 3.0% at that moment, so the tokens between two such steps tell pacr how many tokens make 1%, and the tokens since the last step give the decimal (rounded like claude.ai, shown as `~3%` when it differs). It's kept between n and n + 0.99, so it's never more than 1% off; alerts still use Claude Code's own number, and `pacr doctor` / `pacr json` show both. On first run pacr learns from the snapshots and logs of the last 8 days (`pacr estimate --backfill` shows what it found); tokens per 1% can vary several-fold between windows, which the clamp absorbs.
+
+The estimate weights tokens like API prices relative to input: output 5×, cache writes 1.25×, cache reads 0.1×. Fresh tokens alone read low when a step is mostly cache reads: on Nov 5, 22 minutes after a 14 → 15 step there were only 34k fresh tokens but 8.4M cache reads; fresh-only estimated 15.5%, weighted 15.99%, and Claude Code reached 16% two minutes later. Weighting also made tokens per 1% steadier between steps (variation 0.54 → 0.35 of the mean in that window).
 
 ## Measure your own
 

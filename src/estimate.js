@@ -1,8 +1,9 @@
 'use strict';
 // Estimates the decimal of the limit % that Claude Code passes as a whole number.
 // Claude Code appears to drop the decimal (2.7% → 2%), while claude.ai rounds (→ 3%).
-// When the whole number goes up (2 → 3), the real value was ~3.0% at that moment. Fresh tokens
-// between two such steps give tokens per 1%, and fresh tokens since the last step give the decimal.
+// When the whole number goes up (2 → 3), the real value was ~3.0% at that moment. Tokens between two
+// such steps give tokens per 1%, and tokens since the last step give the decimal. Tokens are weighted
+// like API prices (logs.weighted), so cache reads count: fresh tokens alone read low in cache-heavy steps.
 // Never more than 1% off: the estimate stays in [n, n + 0.99].
 const path = require('path');
 const { spawn } = require('child_process');
@@ -16,12 +17,14 @@ const KEYS = { f: { rkey: 'fr', len: 5 * 3600000 }, w: { rkey: 'wr', len: 7 * 86
 const KEEP_WINDOWS = 8;
 const BACKFILL_MS = 8 * 86400000; // as far back as the rollup keeps tokens
 const RETRY_MS = 10 * 60000;
+const VERSION = 2; // 2 = weighted tokens (0.3.1); older state is in fresh tokens and is relearned
 
 const avg = (a) => (a && a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 
-// Fresh tokens (no cache reads) since a fixed point of the window, so differences are exact.
+// Weighted tokens since a fixed point of the window. Only differences are used, so buckets written
+// before the weighted column existed (counted as 0) don't matter.
 function windowTokens(roll, key, resetAt, now) {
-  return logs.rollupSum(roll, resetAt - KEYS[key].len, now, false);
+  return logs.rollupWeighted(roll, resetAt - KEYS[key].len, now);
 }
 
 // One limit's state: {win, r, n, at, tok, rates, hist}
@@ -58,7 +61,10 @@ function estimate(st, raw, resetAt, tok) {
   return { raw, value: Math.round(value * 100) / 100, shown, approx: shown !== raw, perPct: Math.round(perPct) };
 }
 
-function load() { return readJSON(file('estimate.json'), {}) || {}; }
+function load() {
+  const all = readJSON(file('estimate.json'), {}) || {};
+  return all.v === VERSION ? all : { v: VERSION };
+}
 
 // snap: merged snapshot. update: also record steps (only for fresh numbers from the status line).
 function forSnap(snap, roll, now, update = false) {
@@ -101,7 +107,7 @@ function spawnBackfill() {
   } catch { /* ignore */ }
 }
 
-// Replays saved snapshots of the last 8 days through observe(), with fresh tokens from the logs.
+// Replays saved snapshots of the last 8 days through observe(), with weighted tokens from the logs.
 // observe() keeps the max-per-window rule: a value lower than the highest seen in its window (an idle
 // session's stale number) is never a step, and an older window can't come back.
 // Pure: snaps sorted by time, records = [{ts, tok}] sorted by time. Returns {f, w, found}.
@@ -109,7 +115,7 @@ function replay(snaps, records) {
   const cumAt = [];
   let run = 0;
   for (const r of records) { run += r.tok; cumAt.push(run); }
-  const cum = (t) => { // fresh tokens with ts <= t
+  const cum = (t) => { // tokens with ts <= t
     let lo = 0; let hi = records.length;
     while (lo < hi) { const m = (lo + hi) >> 1; if (records[m].ts <= t) lo = m + 1; else hi = m; }
     return lo ? cumAt[lo - 1] : 0;
@@ -144,7 +150,7 @@ function replay(snaps, records) {
 function backfill(now = Date.now()) {
   const since = now - BACKFILL_MS;
   const snaps = snapshots.read({ since, until: now + 1 });
-  const records = logs.scan({ since }).records.map((r) => ({ ts: r.ts, tok: logs.total(r, false) }));
+  const records = logs.scan({ since }).records.map((r) => ({ ts: r.ts, tok: logs.weighted(r) }));
   const res = replay(snaps, records);
   // Move the anchor of each current window into the rollup's frame (tokens since the window's fixed start).
   const roll = logs.updateRollup({ minIntervalMs: 0, now });

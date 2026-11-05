@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-11-05
+
+### Fixed
+- The limit % decimal estimate read low when a step was mostly cache reads (pacr 15%, claude.ai 16%). It now weights tokens like API prices (output 5×, cache writes 1.25×, cache reads 0.1×) instead of counting fresh tokens only. In a replay of that moment it gives 15.99% instead of 15.5%, and Claude Code reached 16% two minutes later. Learned state from 0.3.0 is relearned automatically from the last 8 days. Status line token totals don't change.
+
 ## 0.3.0 — 2026-11-05
 
 ### New

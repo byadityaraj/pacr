@@ -371,11 +371,28 @@ test('estimate backfill: replays snapshots, stale lower values are never steps',
 test('estimate backfill: pacr estimate --backfill reports and marks it done', () => {
   const o = run(['estimate', '--backfill']);
   assert.match(o, /^Replayed \d+ snapshots since /);
-  assert.match(o, /5-hour: \d+ steps? up, tokens per 1%: /);
-  assert.match(o, /weekly: \d+ steps? up, tokens per 1%: /);
+  assert.match(o, /5-hour: \d+ steps? up, weighted tokens per 1%: /);
+  assert.match(o, /weekly: \d+ steps? up, weighted tokens per 1%: /);
   const saved = JSON.parse(fs.readFileSync(path.join(env.PACR_HOME, 'estimate.json'), 'utf8'));
   assert.ok(saved.backfilled > 0 && saved.backfillStarted == null);
   assert.strictEqual(run(['estimate', '--backfill', '--quiet']), '');
+});
+
+test('weighted tokens: price weights, rollup column matches the logs, old rollups upgrade in place', () => {
+  const L = require('../src/logs');
+  assert.strictEqual(L.weighted({ inp: 100, out: 10, cw: 40, cr: 1000 }), 100 + 50 + 50 + 100);
+  const roll = L.updateRollup({ minIntervalMs: 0, now });
+  const since = Math.floor((now - 86400000) / L.BUCKET) * L.BUCKET; // rollup counts whole buckets
+  const want = L.scan({ since }).records.reduce((x, r) => x + L.weighted(r), 0);
+  assert.ok(want > 0);
+  assert.strictEqual(L.rollupWeighted(roll, since, now), want);
+  // A rollup from 0.3.0 (buckets without a weighted value) still works: missing values count as 0.
+  const old = { b: { 1: [10, 5] }, s: {} };
+  assert.strictEqual(L.rollupWeighted(old, 0, L.BUCKET * 2), 0);
+  assert.strictEqual(L.rollupSum(old, 0, L.BUCKET * 2), 5);
+  // State saved by 0.3.0 (fresh tokens) is dropped and relearned.
+  fs.writeFileSync(path.join(env.PACR_HOME, 'estimate.json'), JSON.stringify({ w: { win: 1, n: 3 }, backfilled: 1 }));
+  assert.match(run(['doctor']), /week \d+% raw, no estimate yet|limit data: none/);
 });
 
 test('estimate: status line marks "~", json and doctor show raw and estimate, alerts stay on raw', () => {
@@ -388,7 +405,7 @@ test('estimate: status line marks "~", json and doctor show raw and estimate, al
   const tokW = E.windowTokens(roll, 'w', wr, now);
   assert.ok(tokW > 300000, 'generator has tokens this week');
   const wState = { win: Math.round(wr / 300000), r: wr, n: 2, at: now - 1000, tok: tokW - 270000, rates: [300000], hist: [] };
-  fs.writeFileSync(path.join(ph, 'estimate.json'), JSON.stringify({ w: wState }));
+  fs.writeFileSync(path.join(ph, 'estimate.json'), JSON.stringify({ v: 2, w: wState }));
   fs.rmSync(path.join(ph, 'latest.json'), { force: true });
   const sl = JSON.stringify({
     session_id: 'est-1', model: { id: 'claude-opus-4-8', display_name: 'Opus' }, workspace: { current_dir: '/x' },
@@ -399,7 +416,7 @@ test('estimate: status line marks "~", json and doctor show raw and estimate, al
   const j = JSON.parse(run(['json']));
   assert.deepStrictEqual([j.limits.weekly.raw, j.limits.weekly.estimate, j.limits.weekly.shown], [2, 2.9, 3]);
   assert.deepStrictEqual([j.limits.fiveHour.raw, j.limits.fiveHour.estimate], [9, null]);
-  assert.match(strip(run(['doctor'])), /decimal estimate: 5h 9% raw, no estimate yet · week 2% raw → ~2\.90% est\. \(shows 3%/);
+  assert.match(strip(run(['doctor'])), /decimal estimate: 5h 9% raw, no estimate yet · week 2% raw → ~2\.90% est\. \(shows 3%, ~\S+ weighted tokens per 1%/);
   // Alerts read st.snap, which keeps Claude Code's number; the estimate lives only in st.est.
   const st = require('../src/state').getState({});
   assert.deepStrictEqual([st.snap.w, st.est.w.shown], [2, 3]);

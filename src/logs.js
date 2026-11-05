@@ -63,6 +63,12 @@ function total(r, countCacheReads = false) {
   return r.inp + r.out + r.cw + (countCacheReads ? r.cr : 0);
 }
 
+// Tokens weighted like API prices relative to input: cache writes 1.25×, output 5×, cache reads 0.1×.
+// Limits seem to track cost, so this follows them better than fresh tokens when cache reads dominate.
+function weighted(r) {
+  return Math.round(r.inp + 1.25 * r.cw + 5 * r.out + 0.1 * r.cr);
+}
+
 // Full scan for reports. Returns records sorted by time plus MCP servers seen in tool calls.
 function scan({ since = 0, until = Infinity } = {}) {
   const files = listFiles(since);
@@ -139,23 +145,28 @@ function updateRollup({ minIntervalMs = 5000, now = Date.now() } = {}) {
       let k = Math.floor(rec.ts / BUCKET);
       let addAll = total(rec, true);
       let addNo = total(rec, false);
+      let addWt = weighted(rec);
       if (rec.key) {
-        const prev = r.seen[rec.key]; // [bucket, all, noCacheReads]
+        const prev = r.seen[rec.key]; // [bucket, all, noCacheReads, weighted]
         if (prev) {
           // Same response logged again: only add the growth, if any.
           k = prev[0];
           const dAll = Math.max(0, addAll - prev[1]);
           const dNo = Math.max(0, addNo - prev[2]);
-          if (!dAll && !dNo) continue;
-          prev[1] += dAll; prev[2] += dNo;
-          addAll = dAll; addNo = dNo;
+          // Entries from before the weighted column: take the current value as the baseline.
+          const dWt = prev[3] == null ? 0 : Math.max(0, addWt - prev[3]);
+          if (!dAll && !dNo && !dWt && prev[3] != null) continue;
+          prev[1] += dAll; prev[2] += dNo; prev[3] = prev[3] == null ? addWt : prev[3] + dWt;
+          addAll = dAll; addNo = dNo; addWt = dWt;
         } else {
-          r.seen[rec.key] = [k, addAll, addNo];
+          r.seen[rec.key] = [k, addAll, addNo, addWt];
         }
       }
-      const cur = r.b[k] || [0, 0];
+      // Buckets: [all, noCacheReads, weighted]. Buckets written before 0.3.1 have no weighted value.
+      const cur = r.b[k] || [0, 0, 0];
       cur[0] += addAll;
       cur[1] += addNo;
+      cur[2] = (cur[2] || 0) + addWt;
       r.b[k] = cur;
       const s = r.s[rec.sid] || [0, 0, 0];
       s[0] += addAll;
@@ -180,16 +191,22 @@ function updateRollup({ minIntervalMs = 5000, now = Date.now() } = {}) {
   return r;
 }
 
-// Sum tokens in the rollup between two timestamps.
-function rollupSum(r, from, to, countCacheReads = false) {
+// Sum tokens in the rollup between two timestamps. col: 0 all, 1 no cache reads, 2 weighted.
+function rollupCol(r, from, to, col) {
   const a = Math.floor(from / BUCKET);
   const b = Math.floor(to / BUCKET);
   let sum = 0;
   for (const k of Object.keys(r.b)) {
     const n = +k;
-    if (n >= a && n <= b) sum += r.b[k][countCacheReads ? 0 : 1];
+    if (n >= a && n <= b) sum += r.b[k][col] || 0;
   }
   return sum;
 }
 
-module.exports = { listFiles, parseLine, total, scan, updateRollup, rollupSum, BUCKET };
+function rollupSum(r, from, to, countCacheReads = false) {
+  return rollupCol(r, from, to, countCacheReads ? 0 : 1);
+}
+
+function rollupWeighted(r, from, to) { return rollupCol(r, from, to, 2); }
+
+module.exports = { listFiles, parseLine, total, weighted, scan, updateRollup, rollupSum, rollupWeighted, BUCKET };

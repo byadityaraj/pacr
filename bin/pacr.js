@@ -267,7 +267,7 @@ function estimateCmd() {
   out(`Replayed ${res.snapshots} snapshots since ${util.fmtDay(res.since)} ${util.fmtHM(res.since)} (max per window: lower stale-session values ignored).`);
   for (const [key, label] of [['f', '5-hour'], ['w', 'weekly']]) {
     const f = res.found[key];
-    out(`\n${label}: ${f.steps} step${f.steps === 1 ? '' : 's'} up, tokens per 1%: ${f.perPct ? '~' + util.fmtTok(f.perPct) : 'not enough steps yet'}`);
+    out(`\n${label}: ${f.steps} step${f.steps === 1 ? '' : 's'} up, weighted tokens per 1%: ${f.perPct ? '~' + util.fmtTok(f.perPct) : 'not enough steps yet'}`);
     for (const w of f.windows) {
       out(`  window ending ${util.fmtDay(w.resetAt)} ${util.fmtHM(w.resetAt)}: ${w.steps} step${w.steps === 1 ? '' : 's'}` +
         (w.rates.length ? `, per 1%: ${w.rates.map((x) => util.fmtTok(x)).join(', ')}` : ''));
@@ -302,7 +302,7 @@ function doctor() {
     let est = {};
     try { est = require('../src/state').getState({}).est || {}; } catch { /* ignore */ }
     const e = (label, raw, x) => (raw == null ? null : x
-      ? `${label} ${raw}% raw → ~${x.value.toFixed(2)}% est. (shows ${x.shown}%, ~${util.fmtTok(x.perPct)} tokens per 1%)`
+      ? `${label} ${raw}% raw → ~${x.value.toFixed(2)}% est. (shows ${x.shown}%, ~${util.fmtTok(x.perPct)} weighted tokens per 1%)`
       : `${label} ${raw}% raw, no estimate yet`);
     const parts = [e('5h', latest.f, est.f), e('week', latest.w, est.w)].filter(Boolean);
     out(`${util.c('d', '·')} decimal estimate: ${parts.join(' · ')}  ${util.c('d', '(Claude Code drops the decimal; needs one full 1% step)')}`);
