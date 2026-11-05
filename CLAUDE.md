@@ -26,7 +26,7 @@ Unofficial, local-only Claude Code usage tracker: tokens per hour/day/week/sessi
 - In VS Code, `process.execPath` is Electron: child node processes need `ELECTRON_RUN_AS_NODE=1`.
 
 ## Test
-- `npm test` — generates fake logs + snapshots in a temp HOME and checks every command (53 tests). CI runs it on macOS/Linux/Windows × Node 18/20/22 (`.github/workflows/test.yml`).
+- `npm test` — generates fake logs + snapshots in a temp HOME and checks every command (54 tests). CI runs it on macOS/Linux/Windows × Node 18/20/22 (`.github/workflows/test.yml`).
 - `HOME=<tmp> PACR_HOME=<tmp>/.pacr node test/vscode-mock.js` — runs the extension against a mock `vscode`.
 - `node scripts/build-vscode.js --package` → `dist/pacr-x.y.z.vsix`.
 - Tested by hand on macOS (CLI, status line, /pacr; extension installed in VS Code + Cursor). Not yet on real Windows/Linux — CI is the first check there.

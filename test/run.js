@@ -248,6 +248,25 @@ test('piping into a closed reader (| head) exits quietly', () => {
   assert.strictEqual(r.stderr, '');
 });
 
+test('writeJSON: retries a busy rename (Windows), then writes in place; no temp file left', () => {
+  const { writeJSON, readJSON } = require('../src/store');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pacr-w-'));
+  const p = path.join(d, 'a.json');
+  const real = fs.renameSync;
+  let n = 0;
+  try {
+    fs.renameSync = (a, b) => { if (n++ < 2) { const e = new Error('busy'); e.code = 'EPERM'; throw e; } return real(a, b); };
+    writeJSON(p, { x: 1 });
+    assert.deepStrictEqual([readJSON(p).x, n], [1, 3]);
+    fs.renameSync = () => { const e = new Error('busy'); e.code = 'EBUSY'; throw e; };
+    writeJSON(p, { x: 2 });
+    assert.strictEqual(readJSON(p).x, 2);
+    assert.deepStrictEqual(fs.readdirSync(d), ['a.json']);
+  } finally {
+    fs.renameSync = real;
+  }
+});
+
 test('fmtTok formatting', () => {
   const { fmtTok, parseTok } = require('../src/util');
   assert.deepStrictEqual([0, 999, 1500, 12345, 999999, 2410000, 6000000, 70500000, 1.2e9].map(fmtTok),

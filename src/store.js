@@ -8,15 +8,29 @@ function readJSON(p, fallback) {
 }
 
 // Write via temp file + rename so concurrent status lines never see half a file.
+// On Windows, replacing a file that another process (antivirus, indexer, another pacr) has open
+// fails for a moment with EPERM/EBUSY/EACCES. Retry briefly, then write in place.
+const RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+function pause(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* ignore */ } }
+
 function writeJSON(p, obj) {
   const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
+  const body = JSON.stringify(obj);
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(tmp, JSON.stringify(obj));
-    fs.renameSync(tmp, p);
+    fs.writeFileSync(tmp, body);
   } catch {
     try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    return;
   }
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, p); return; } catch (e) {
+      if (!RETRY_CODES.has(e && e.code) || i >= 4) break;
+      pause(25 * (i + 1));
+    }
+  }
+  try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+  try { fs.writeFileSync(p, body); } catch { /* ignore */ }
 }
 
 function appendJSONL(p, obj) {
