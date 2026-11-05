@@ -29,6 +29,7 @@ Only Opus 5.5 was measured. The other models are scaled from that measurement by
 - Effort doesn't change tokens per 1%, only how many tokens a task uses.
 - Cache reads aren't in the fresh count but still use the limit, so long sessions use it faster than the fresh number suggests.
 - Claude Code passes whole-number percentages. Readings so far suggest it drops the decimal (2.7% → 2%), while claude.ai/settings/usage rounds (→ 3%), so its raw number can be 1% less than the usage page. If it truncates, "1%" likely means 1–1.99%, so 255k at 1% means roughly 13M–26M per week. The 24.8M at 83% reading is the more reliable one: it barely moves either way (about 29.5–30M). Bigger percentages give better estimates.
+- On Team, Pro and Max plans, claude.ai chat uses the same limits but isn't in Claude Code's logs. Tokens per 1% measured while you also chat come out too low: we saw ~19k fresh tokens per 1% of the 5-hour window in one window against ~75k in another. The best measurements come from windows where you used Claude Code only.
 - Limits can change at any time. This is not official and not affiliated with Anthropic.
 
 ## pacr's decimal estimate
