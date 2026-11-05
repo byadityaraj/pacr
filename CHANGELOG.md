@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 — 2026-11-05
+
+### Fixed
+- Windows: saving pacr's files (settings, limit data) could fail when another program, such as antivirus, briefly had the file open. pacr ignored the error, so a setting like `pacr config countCacheReads false` could quietly not be saved. It now retries a few times and then writes the file in place.
+
 ## 0.3.1 — 2026-11-05
 
 ### Fixed
