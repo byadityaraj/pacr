@@ -133,17 +133,20 @@ It works whether you run Claude Code in the terminal or in the Claude Code exten
 | `pacr alerts` | Alert settings and recent alerts (`pacr alerts test` sends one) |
 | `pacr budget daily 3M` | Set your own daily or weekly token budget |
 | `pacr export --csv` | Raw data for Excel or Sheets |
-| `pacr hooks install` | Opt-in: trim test/build output to failures + summary (see below) |
+| `pacr hooks install` | Experimental, opt-in: trim test/build output to failures + summary (see below) |
 
 Run `pacr help` for every option.
 
-## Trim test and build output (opt-in)
+## Trim test and build output (experimental, opt-in)
+
+> **Experimental.** Not yet tested in a live Claude Code session on every platform. Turn it off any time with `pacr hooks off`.
 
 Tool results are sent back to the model as input, and test or build runs are often the biggest ones. `pacr tools` shows which commands and files cost you the most. `pacr hooks install` adds a [PreToolUse hook](https://code.claude.com/docs/en/costs) that trims test and build output before Claude sees it:
 
 - Only simple commands: `npm test`, `npm run test` / `npm run build`, the pnpm and yarn equivalents, `pytest`, `go test`, `cargo test`. Anything with pipes, `&&`, redirects or watch mode is left alone, and so is every other command.
 - Keeps failures, errors and the summary line, at most ~150 lines. Short output is passed through as is. Exit codes are kept.
-- Written in Node, so it works on Windows too. On any error the command runs unchanged. It never approves a command: your permission rules still apply.
+- Written in Node, so it works on Windows too. On any error the command runs unchanged.
+- Your permission rules are checked against the original command, since the rewritten one no longer matches them: if a `deny` or `ask` rule covers it, the command isn't rewritten. If an `allow` rule covers it (e.g. `Bash(npm test:*)`), the hook returns `allow` so it doesn't start prompting. Otherwise the normal permission flow decides. If a settings file can't be read, the command isn't rewritten.
 - Shows exactly what it adds to `settings.json` and asks first (`--yes` skips the question). settings.json is backed up to `settings.json.pacr-hooks.bak`.
 - Need the full output once? Prefix the command: `PACR_RAW=1 npm test`.
 
@@ -221,6 +224,7 @@ Run `pacr doctor` first. It checks each piece and says what's missing.
 |---|---|
 | Status line doesn't appear | Start a new Claude Code session, then run `pacr doctor` |
 | No limit percentages | They appear after the first reply in a Pro or Max session. API-key logins don't have them |
+| claude.ai/settings/usage is a little ahead of pacr | On Team, Pro and Max plans, claude.ai chat shares your limits. pacr only sees chat usage after Claude Code's next reply, so the usage page can be a little ahead until then |
 | `/pacr` missing | Run `pacr install` again, then start a new session |
 | No desktop notifications | Run `pacr alerts test`. macOS: allow notifications for Script Editor in System Settings. Linux: install `notify-send` (libnotify) |
 | Hard to read on a light terminal | pacr uses your terminal's colours. Also pick a light theme in Claude Code with `/theme` |

@@ -8,7 +8,7 @@ const { file } = require('./paths');
 const { readJSON, writeJSON, appendJSONL, readJSONL, pruneJSONL } = require('./store');
 const notify = require('./notify');
 const snapshots = require('./snapshots');
-const { fmtTok, fmtDur, dayKey, startOfWeek, DAY } = require('./util');
+const { fmtTok, fmtDur, fmtPct, dayKey, startOfWeek, DAY } = require('./util');
 
 function loadState() { return readJSON(file('alert-state.json'), { fired: {}, maxed: {} }); }
 
@@ -46,13 +46,14 @@ function evaluate(state, { allowSummary = true, inlineSummary = false, desktop =
   const add = (...a) => { if (fire(st, fcfg, ...a, now)) fired.push(a[0]); };
 
   // Ignore stale snapshots (older than 15 min) for threshold alerts.
-  const fresh = snap && (state.snapAgeMs == null || state.snapAgeMs < 15 * 60000);
+  // Skip numbers the status line hasn't refreshed for a while (snapAgeMs counts from the last reply instead).
+  const fresh = snap && (state.snapAgeMs == null || state.now - snap.t < 15 * 60000);
 
   if (fresh && snap.f != null && snap.fr != null) {
     const id = snapshots.winId(snap.fr);
     for (const p of [].concat(n.fiveHour || [])) {
       if (snap.f >= p) add(`5h:${p}:${id}`, p >= cfg.dangerPct ? 'danger' : 'warn',
-        `5-hour limit at ${Math.round(snap.f)}%`, `Resets in ${fmtDur(snap.fr - now)}. ${state.tip || ''}`.trim());
+        `5-hour limit at ${fmtPct(snap.f)}`, `Resets in ${fmtDur(snap.fr - now)}. ${state.tip || ''}`.trim());
     }
     if (n.burnRate && burn && burn.willHit && burn.minsToFull <= (n.burnMinutes || 45) && snap.f >= 50) {
       add(`burn:${id}`, 'warn', 'Burn rate high',
@@ -64,7 +65,7 @@ function evaluate(state, { allowSummary = true, inlineSummary = false, desktop =
     const id = snapshots.winId(snap.wr);
     for (const p of [].concat(n.weekly || [])) {
       if (snap.w >= p) add(`wk:${p}:${id}`, p >= cfg.dangerPct ? 'danger' : 'warn',
-        `Weekly limit at ${Math.round(snap.w)}%`, `Resets in ${fmtDur(snap.wr - now)}.`);
+        `Weekly limit at ${fmtPct(snap.w)}`, `Resets in ${fmtDur(snap.wr - now)}.`);
     }
     if (snap.w >= snapshots.HIT_PCT) st.maxed.w = snap.wr;
   }

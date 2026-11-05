@@ -35,9 +35,65 @@ function isFilterable(cmd) {
   return true;
 }
 
+// ---------------------------------------------------------------- permission rules
+// The rewritten command no longer looks like the original to Claude Code's permission rules, so
+// the hook checks the user's rules against the ORIGINAL command itself:
+//   deny/ask rule matches → don't rewrite (Claude Code then applies that rule as usual)
+//   allow rule matches    → rewrite and return "allow", so an allowed `npm test` doesn't start prompting
+//   no rule matches       → rewrite only; the normal permission flow decides
+// Matching errs on the safe side: allow rules match narrowly, deny/ask rules broadly.
+function settingsFiles(cwd) {
+  const out = [claudeSettingsPath(), path.join(path.dirname(claudeSettingsPath()), 'settings.local.json')];
+  for (const d of new Set([process.env.CLAUDE_PROJECT_DIR, cwd].filter(Boolean))) {
+    out.push(path.join(d, '.claude', 'settings.json'), path.join(d, '.claude', 'settings.local.json'));
+  }
+  if (process.platform === 'darwin') out.push('/Library/Application Support/ClaudeCode/managed-settings.json');
+  else if (process.platform === 'win32') out.push('C:\\Program Files\\ClaudeCode\\managed-settings.json');
+  else out.push('/etc/claude-code/managed-settings.json');
+  return out;
+}
+
+// Returns { allow, deny, ask } rule lists, or null if a settings file can't be read (then: hands off).
+function loadRules(cwd) {
+  const rules = { allow: [], deny: [], ask: [] };
+  for (const f of settingsFiles(cwd)) {
+    if (!fs.existsSync(f)) continue;
+    let s;
+    try { s = readSettings(f); } catch { return null; }
+    const pm = (s && s.permissions) || {};
+    for (const k of ['allow', 'deny', 'ask']) if (Array.isArray(pm[k])) rules[k].push(...pm[k].filter((r) => typeof r === 'string'));
+  }
+  return rules;
+}
+
+const reEsc = (x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+// Does a permission rule like "Bash(npm test:*)" cover this command? broad = for deny/ask rules.
+function ruleMatches(rule, cmd, broad) {
+  const m = String(rule).trim().match(/^Bash(?:\((.*)\))?$/s);
+  if (!m) return false;
+  const p = m[1] == null ? '*' : m[1].trim();
+  if (p === '' || p === '*') return true;
+  if (p.endsWith(':*')) {
+    const pre = p.slice(0, -2);
+    return broad ? cmd.startsWith(pre) : cmd === pre || cmd.startsWith(pre + ' ');
+  }
+  if (p.includes('*')) {
+    let src = p.split('*').map(reEsc).join('.*');
+    if (broad) src = src.replace(/ \.\*$/, '( .*)?'); // "npm test *" also covers bare "npm test"
+    return new RegExp(`^${src}$`, 's').test(cmd);
+  }
+  return broad ? cmd === p || cmd.startsWith(p + ' ') : cmd === p;
+}
+
+function decide(cmd, rules) {
+  if (!rules) return 'skip';
+  if ([...rules.deny, ...rules.ask].some((r) => ruleMatches(r, cmd, true))) return 'skip';
+  return rules.allow.some((r) => ruleMatches(r, cmd, false)) ? 'allow' : 'rewrite';
+}
+
 // ---------------------------------------------------------------- the hook itself
 // Returns the JSON string to print. Never throws.
-function handle(raw, { cfg = null, platform } = {}) {
+function handle(raw, { cfg = null, platform, rules } = {}) {
   try {
     if (cfg == null) cfg = require('./config').load();
     if (cfg.hooks && cfg.hooks.enabled === false) return '{}';
@@ -49,9 +105,13 @@ function handle(raw, { cfg = null, platform } = {}) {
     if (!fs.existsSync(BIN)) return '{}';
     if ((platform || process.platform) !== 'win32' && !fs.existsSync(process.execPath)) return '{}';
     const cmd = ti.command.trim();
+    const verdict = decide(cmd.replace(/\s+/g, ' '), rules === undefined ? loadRules(input.cwd) : rules);
+    if (verdict === 'skip') return '{}';
     // isFilterable allows no quotes or $, so the command can go inside double quotes as is.
     const rewritten = `(set -o pipefail; ${cmd} 2>&1 | ${filterCommand(platform)} "${cmd}")`;
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...ti, command: rewritten } } });
+    const out = { hookEventName: 'PreToolUse', updatedInput: { ...ti, command: rewritten } };
+    if (verdict === 'allow') out.permissionDecision = 'allow';
+    return JSON.stringify({ hookSpecificOutput: out });
   } catch {
     return '{}';
   }
@@ -206,4 +266,4 @@ function status() {
   return { path: p, installed, enabled, active: installed && enabled, error };
 }
 
-module.exports = { isFilterable, handle, main, filterLines, filterMain, install, uninstall, status, setEnabled, preview, hookCommand, MAX_LINES };
+module.exports = { isFilterable, ruleMatches, decide, handle, main, filterLines, filterMain, install, uninstall, status, setEnabled, preview, hookCommand, MAX_LINES };

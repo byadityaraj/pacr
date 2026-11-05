@@ -13,6 +13,7 @@ const { expected, weekReset } = generate(home, now);
 const BIN = path.join(__dirname, '..', 'bin', 'pacr.js');
 const env = { ...process.env, HOME: home, USERPROFILE: home, PACR_NO_NOTIFY: '1', PACR_HOME: path.join(home, '.pacr'), NO_COLOR: '' };
 delete env.CLAUDE_CONFIG_DIR;
+delete env.CLAUDE_PROJECT_DIR;
 delete env.XDG_CONFIG_HOME;
 
 function run(args, input) {
@@ -134,6 +135,7 @@ test('session detail by prefix', () => {
 
 test('budget set + shows in status line', () => {
   run(['budget', 'daily', '1k']);
+  fs.rmSync(path.join(env.PACR_HOME, 'latest.json'), { force: true }); // earlier tests left a later 5h window at 71%
   const plain = run(['statusline'], input(30, 20, 10)).replace(/\x1b\[[0-9;]*m/g, '');
   assert.match(plain, /today \S+\/1k/);
   assert.match(plain, /daily budget of 1k reached/);
@@ -257,6 +259,42 @@ test('csv export', () => {
   assert.match(o.split('\n')[0], /^timestamp,session,project,branch,model/);
 });
 
+test('limits: two sessions in the same window keep the highest %, a new window replaces it', () => {
+  const S = require('../src/snapshots');
+  const fr = now + 3 * 3600000;
+  const wr = now + 4 * 86400000;
+  const a = { t: now - 60000, sid: 'A', f: 2, fr, w: 1, wr, lr: now - 120000 };
+  const b = { t: now, sid: 'B', f: 1, fr: fr + 1000, w: 1, wr, lr: now - 600000 }; // idle session, stale numbers
+  const m = S.merge(a, b, now);
+  assert.deepStrictEqual([m.f, m.w, m.sid], [2, 1, 'B']);
+  assert.strictEqual(m.lr, now - 120000); // as fresh as A's reply
+  assert.strictEqual(S.merge(b, a, now).f, 2);
+  assert.strictEqual(S.merge(m, { ...b, f: 5 }, now).f, 5); // still goes up
+  const next = { t: now, sid: 'B', f: 1, fr: fr + 5 * 3600000, w: 1, wr, lr: now };
+  assert.strictEqual(S.merge(m, next, now).f, 1); // new window replaces
+  assert.strictEqual(S.merge(next, m, now).f, 1); // ...and an older window can't come back
+  assert.strictEqual(S.merge({ ...a, fr: now - 1000 }, b, now).f, 1); // expired window is dropped
+  // Through the real status line: session 1 reports 2%, then session 2 reports 1% for the same window.
+  const sl = (sid, f) => JSON.stringify({
+    session_id: sid, model: { id: 'claude-opus-4-8', display_name: 'Opus' }, workspace: { current_dir: '/x' },
+    rate_limits: { five_hour: { used_percentage: f, resets_at: Math.floor(fr / 1000) }, seven_day: { used_percentage: 1, resets_at: Math.floor(wr / 1000) } }
+  });
+  fs.rmSync(path.join(env.PACR_HOME, 'latest.json'), { force: true });
+  const strip = (x) => x.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.match(strip(run(['statusline'], sl('sess-one', 2))), /5h .* 2% /);
+  assert.match(strip(run(['statusline'], sl('sess-two', 1))), /5h .* 2% /);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.PACR_HOME, 'latest.json'), 'utf8')).f, 2);
+  const o = strip(run([]));
+  assert.match(o, /5h .* 2% resets/);
+  assert.match(o, /limits from last Claude Code reply, \d+m ago/);
+  assert.doesNotMatch(o, /limits as of/);
+});
+
+test('fmtPct: one decimal under 10% when there is one, whole numbers otherwise', () => {
+  const { fmtPct } = require('../src/util');
+  assert.deepStrictEqual([1.4, 1, 0, 9.94, 9.96, 12.4, 99.6, null].map(fmtPct), ['1.4%', '1%', '0%', '9.9%', '10%', '12%', '100%', '—']);
+});
+
 test('tools: groups tool results by command and file, with suggestions', () => {
   const T = require('../src/tools');
   assert.strictEqual(T.normalizeCommand('cd app && CI=1 npm run test -- --ci 2>&1 | tail -50'), 'npm run test');
@@ -298,9 +336,10 @@ test('tools: groups tool results by command and file, with suggestions', () => {
 test('hook: rewrites only simple test/build commands; everything else passes through unchanged', () => {
   const H = require('../src/hooks');
   const on = { hooks: { enabled: true } };
+  const none = { allow: [], deny: [], ask: [] };
   const ev = (command, extra = {}) => JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command, description: 'x', ...extra } });
   for (const c of ['npm test', 'npm run build', 'npm run test:unit -- --ci', 'pnpm test', 'pnpm run build', 'yarn build', 'pytest -x tests/', 'go test ./...', 'cargo test']) {
-    const o = JSON.parse(H.handle(ev(c), { cfg: on }));
+    const o = JSON.parse(H.handle(ev(c), { cfg: on, rules: none }));
     assert.ok(o.hookSpecificOutput, c);
     assert.strictEqual(o.hookSpecificOutput.hookEventName, 'PreToolUse');
     assert.strictEqual(o.hookSpecificOutput.permissionDecision, undefined); // never auto-approves
@@ -309,16 +348,50 @@ test('hook: rewrites only simple test/build commands; everything else passes thr
   }
   for (const c of ['ls -la', 'git diff', 'npm install', 'npm test; rm -rf /', 'npm test && echo hi', 'npm test | tail', 'npm test > out.txt',
     'npm test $(whoami)', 'npm test -- --watch', 'PACR_RAW=1 npm test', 'cd app && npm test', 'npm test "a b"', 'pytest # c']) {
-    assert.strictEqual(H.handle(ev(c), { cfg: on }), '{}', c);
+    assert.strictEqual(H.handle(ev(c), { cfg: on, rules: none }), '{}', c);
   }
-  assert.strictEqual(H.handle(ev('npm test', { run_in_background: true }), { cfg: on }), '{}');
-  assert.strictEqual(H.handle(ev('npm test'), { cfg: { hooks: { enabled: false } } }), '{}');
-  assert.strictEqual(H.handle(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'a' } }), { cfg: on }), '{}');
-  for (const bad of ['', 'not json', '{"tool_name":"Bash"}', 'null']) assert.strictEqual(H.handle(bad, { cfg: on }), '{}');
+  assert.strictEqual(H.handle(ev('npm test', { run_in_background: true }), { cfg: on, rules: none }), '{}');
+  assert.strictEqual(H.handle(ev('npm test'), { cfg: { hooks: { enabled: false } }, rules: none }), '{}');
+  assert.strictEqual(H.handle(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'a' } }), { cfg: on, rules: none }), '{}');
+  for (const bad of ['', 'not json', '{"tool_name":"Bash"}', 'null']) assert.strictEqual(H.handle(bad, { cfg: on, rules: none }), '{}');
   // Through the real binary, as Claude Code runs it.
   assert.strictEqual(run(['hook'], ev('git status')).trim(), '{}');
   assert.strictEqual(run(['hook'], 'garbage').trim(), '{}');
   assert.match(run(['hook'], ev('npm test')), /"updatedInput"/);
+});
+
+test('hook: checks permission rules against the original command', () => {
+  const H = require('../src/hooks');
+  const on = { hooks: { enabled: true } };
+  const ev = (command) => JSON.stringify({ tool_name: 'Bash', cwd: '/nowhere', tool_input: { command } });
+  const out = (cmd, rules) => JSON.parse(H.handle(ev(cmd), { cfg: on, rules }));
+  const R = (o) => ({ allow: [], deny: [], ask: [], ...o });
+  // No matching rule: rewritten, no decision, so the normal permission flow decides.
+  assert.strictEqual(out('npm test', R({ allow: ['Bash(git status)'] })).hookSpecificOutput.permissionDecision, undefined);
+  // An allow rule covers the original → "allow" (the rewritten command would no longer match it).
+  for (const [rule, cmd] of [['Bash(npm test:*)', 'npm test'], ['Bash(npm test:*)', 'npm test -- --ci'], ['Bash(npm test)', 'npm test'], ['Bash(npm test *)', 'npm test -- --ci'], ['Bash', 'npm test']]) {
+    assert.strictEqual(out(cmd, R({ allow: [rule] })).hookSpecificOutput.permissionDecision, 'allow', rule);
+  }
+  assert.strictEqual(out('npm test -- --ci', R({ allow: ['Bash(npm test)'] })).hookSpecificOutput.permissionDecision, undefined);
+  // A deny / ask rule covers the original → not rewritten at all, so Claude Code applies it as usual.
+  assert.deepStrictEqual(out('npm test', R({ allow: ['Bash'], deny: ['Bash(npm test:*)'] })), {});
+  assert.deepStrictEqual(out('npm test', R({ ask: ['Bash(npm test *)'] })), {});
+  assert.deepStrictEqual(out('pytest -x', R({ deny: ['Bash(pytest:*)'] })), {});
+  assert.deepStrictEqual(out('npm test', null), {}); // unreadable settings: hands off
+  // Real settings files: user settings.local.json allows, project .claude/settings.json denies.
+  const proj = path.join(home, 'proj');
+  fs.mkdirSync(path.join(proj, '.claude'), { recursive: true });
+  const userLocal = path.join(home, '.claude', 'settings.local.json');
+  fs.writeFileSync(userLocal, JSON.stringify({ permissions: { allow: ['Bash(npm test:*)', 'Bash(cargo test:*)'] } }));
+  fs.writeFileSync(path.join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Bash(cargo test:*)'] } }));
+  const real = (command) => run(['hook'], JSON.stringify({ tool_name: 'Bash', cwd: proj, tool_input: { command } })).trim();
+  assert.match(real('npm test'), /"permissionDecision":"allow"/);
+  assert.strictEqual(real('cargo test'), '{}');
+  assert.match(real('go test ./...'), /"updatedInput"/);
+  assert.doesNotMatch(real('go test ./...'), /permissionDecision/);
+  fs.writeFileSync(path.join(proj, '.claude', 'settings.local.json'), '{ broken');
+  assert.strictEqual(real('npm test'), '{}');
+  fs.rmSync(userLocal);
 });
 
 test('filter: failing test error lines and summary survive, output capped, exit code kept', () => {
@@ -357,6 +430,8 @@ test('hooks install / off / uninstall keep other settings; pacr uninstall remove
   const o = run(['hooks', 'install', '--yes']);
   assert.match(o, /"PreToolUse"/);
   assert.match(o, /Hook added/);
+  assert.match(o, /^Experimental\./);
+  assert.match(run(['help']), /hooks install \[--yes\]\s+experimental/);
   assert.ok(fs.existsSync(sp + '.pacr-hooks.bak'));
   run(['hooks', 'install', '--yes']); // twice: still one entry
   let s = JSON.parse(fs.readFileSync(sp, 'utf8'));

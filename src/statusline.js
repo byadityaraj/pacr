@@ -6,7 +6,7 @@
 const { getState } = require('./state');
 const snapshots = require('./snapshots');
 const alerts = require('./alerts');
-const { c, bar, fmtTok, fmtDur, fmtUsd, levelColor, setColorMode } = require('./util');
+const { c, bar, fmtTok, fmtDur, fmtUsd, fmtPct, levelColor, setColorMode } = require('./util');
 
 function tokenLine(st) {
   const { tokens, budget } = st;
@@ -26,11 +26,11 @@ function limitsLine(st) {
   const out = [];
   if (snap && snap.f != null) {
     const col = levelColor(snap.f, cfg);
-    out.push(`5h ${bar(snap.f, 10, col)} ${c(col, Math.round(snap.f) + '%')} ${c('d', 'resets ' + fmtDur(snap.fr - now))}`);
+    out.push(`5h ${bar(snap.f, 10, col)} ${c(col, fmtPct(snap.f))} ${c('d', 'resets ' + fmtDur(snap.fr - now))}`);
   }
   if (snap && snap.w != null) {
     const col = levelColor(snap.w, cfg);
-    out.push(`week ${bar(snap.w, 10, col)} ${c(col, Math.round(snap.w) + '%')} ${c('d', 'resets ' + fmtDur(snap.wr - now))}`);
+    out.push(`week ${bar(snap.w, 10, col)} ${c(col, fmtPct(snap.w))} ${c('d', 'resets ' + fmtDur(snap.wr - now))}`);
   }
   if (out.length) return out.join(c('d', '  │  '));
   // API-key users (no subscription limits): show context and session cost instead.
@@ -46,7 +46,7 @@ function warningLine(st) {
     if (snap.f >= cfg.dangerPct) {
       const left = burn && burn.minsToFull != null
         ? `~${fmtDur(burn.minsToFull * 60000)} left at this pace`
-        : `5h at ${Math.round(snap.f)}%, resets in ${fmtDur(snap.fr - now)}`;
+        : `5h at ${fmtPct(snap.f)}, resets in ${fmtDur(snap.fr - now)}`;
       return c('r', `⚠ ${left} — ${tip}`);
     }
     if (burn && burn.willHit && snap.f >= 50) {
@@ -54,7 +54,7 @@ function warningLine(st) {
     }
   }
   if (snap && snap.w != null && snap.w >= cfg.dangerPct) {
-    return c('r', `⚠ weekly limit at ${Math.round(snap.w)}% — resets in ${fmtDur(snap.wr - now)}. ${tip}`);
+    return c('r', `⚠ weekly limit at ${fmtPct(snap.w)} — resets in ${fmtDur(snap.wr - now)}. ${tip}`);
   }
   if (budget.daily && budget.daily.pct >= 100) return c('y', `⚠ daily budget of ${fmtTok(budget.daily.limit)} reached`);
   if (budget.weekly && budget.weekly.pct >= 100) return c('y', `⚠ weekly budget of ${fmtTok(budget.weekly.limit)} reached`);

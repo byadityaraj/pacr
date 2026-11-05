@@ -74,7 +74,7 @@ function today({ date = null, now = Date.now() } = {}) {
   if (isToday) {
     const st = getState({ now });
     if (st.snap && st.snap.f != null) {
-      lines.push(c('d', `5h window: ${Math.round(st.snap.f)}% used · resets ${fmtHM(st.snap.fr)} (in ${fmtDur(st.snap.fr - now)})`));
+      lines.push(c('d', `5h window: ${fmtPct(st.snap.f)} used · resets ${fmtHM(st.snap.fr)} (in ${fmtDur(st.snap.fr - now)})`));
     }
     if (st.budget.daily) lines.push(c('d', `daily budget: ${fmtTok(st.budget.daily.used)} of ${fmtTok(st.budget.daily.limit)} (${Math.round(st.budget.daily.pct)}%)`));
   }
@@ -111,7 +111,7 @@ function week({ last = false, now = Date.now() } = {}) {
   lines.push(head);
   if (wPct != null) {
     const col = levelColor(wPct, config.load());
-    lines.push(`weekly limit ${bar(wPct, 20, col)} ${c(col, Math.round(wPct) + '%')}  ${c('d', 'resets ' + fmtDay(latest.wr) + ' ' + fmtHM(latest.wr) + ' (in ' + fmtDur(latest.wr - now) + ')')}`);
+    lines.push(`weekly limit ${bar(wPct, 20, col)} ${c(col, fmtPct(wPct))}  ${c('d', 'resets ' + fmtDay(latest.wr) + ' ' + fmtHM(latest.wr) + ' (in ' + fmtDur(latest.wr - now) + ')')}`);
   }
   lines.push('');
 
@@ -597,7 +597,7 @@ function overview({ now = Date.now() } = {}) {
   if (lim) lines.push(lim);
   const w = sl.warningLine(st);
   if (w) lines.push(w);
-  if (st.snapAgeMs != null && st.snap && (st.snap.f != null || st.snap.w != null)) lines.push(c('d', `limits as of ${fmtDur(st.snapAgeMs)} ago (from the status line)`));
+  if (st.snapAgeMs != null && st.snap && (st.snap.f != null || st.snap.w != null)) lines.push(c('d', `limits from last Claude Code reply, ${fmtDur(st.snapAgeMs)} ago`));
   if (!st.snap) lines.push(c('d', 'No limit data yet: run `pacr install` to add the status line.'));
   lines.push('');
   lines.push(c('d', 'more: pacr today | week | month | sessions | branches | heatmap | tips | tools | plan | alerts | help'));

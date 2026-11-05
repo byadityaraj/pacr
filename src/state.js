@@ -39,19 +39,23 @@ function quickTip(snap) {
 function getState({ input = null, now = Date.now(), minScanIntervalMs = 5000 } = {}) {
   const cfg = config.load();
   const cr = cfg.countCacheReads === true;
+  const roll = logs.updateRollup({ minIntervalMs: minScanIntervalMs, now });
   let snap = null;
-  let snapAgeMs = null;
   if (input) {
     snap = snapshots.fromInput(input, now);
+    // The numbers are as fresh as this session's newest reply, not as this status line run.
+    const s = snap.sid && roll.s[snap.sid];
+    if (s && s[2]) snap.lr = s[2];
+    if (snap.f != null || snap.w != null) snap = snapshots.merge(snapshots.latest(), snap, now);
   } else {
     snap = snapshots.latest();
-    if (snap) snapAgeMs = now - snap.t;
   }
+  // Age of the limit numbers: since the last Claude Code reply that brought them.
+  const snapAgeMs = !input && snap ? now - (snap.lr || snap.t) : null;
   // Limit windows that already reset are no longer valid.
   if (snap && snap.fr != null && snap.fr <= now) { snap = { ...snap, f: null, fr: null }; }
   if (snap && snap.wr != null && snap.wr <= now) { snap = { ...snap, w: null, wr: null }; }
 
-  const roll = logs.updateRollup({ minIntervalMs: minScanIntervalMs, now });
   const weekStart = snap && snap.wr ? snap.wr - 7 * DAY : now - 7 * DAY;
   const tokens = {
     hour: logs.rollupSum(roll, now - 3600000, now, cr),

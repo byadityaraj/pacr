@@ -4,9 +4,9 @@ Anthropic shows your Claude Code limits as percentages, not token counts. This p
 
 ## Measured
 
-On Max 5×, with Opus 5.5 at medium effort, 255k fresh tokens (input + output + cache writes) used 3% of the 5-hour window and 1% of the week (measured Nov 5, 2026).
+On Team (Premium seat), with Opus 5.5 at medium effort, 255k fresh tokens (input + output + cache writes) used 3% of the 5-hour window and 1% of the week (measured Nov 5, 2026).
 
-In an earlier week, 24.8M fresh tokens used 83% of the week, so a full week is about 30M.
+In an earlier week, 24.8M fresh tokens used 83% of the week, so a full week is about 30M. This is the more reliable figure (see below).
 
 ## Estimates
 
@@ -25,10 +25,10 @@ Only Opus 5.5 was measured. The other models are scaled from that measurement by
 
 ## Read this before using the numbers
 
-- The numbers are for one plan. Pro, Max 5× and Max 20× differ a lot.
+- The numbers are for one plan. Pro, Max 5×, Max 20× and Team seats differ a lot.
 - Effort doesn't change tokens per 1%, only how many tokens a task uses.
 - Cache reads aren't in the fresh count but still use the limit, so long sessions use it faster than the fresh number suggests.
-- "1%" is rounded, so the weekly figure from one small reading has a wide range (17–51M). Bigger percentages give better estimates.
+- Claude Code passes whole-number percentages, and we don't know if it rounds or truncates. "1%" may mean 0.5–1.5% (rounded) or 1–1.99% (truncated), so 255k at 1% means roughly 13M–51M per week. The 24.8M at 83% reading is the more reliable one: it barely moves either way (about 29.5–30.1M). Bigger percentages give better estimates.
 - Limits can change at any time. This is not official and not affiliated with Anthropic.
 
 ## Measure your own

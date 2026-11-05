@@ -60,7 +60,12 @@ function fmtDur(ms) {
 }
 
 function fmtUsd(v) { return v == null ? '—' : '$' + v.toFixed(2); }
-function fmtPct(v) { return v == null ? '—' : `${Math.round(v)}%`; }
+// One decimal under 10% (1.4%) when the value has one; whole numbers otherwise.
+function fmtPct(v) {
+  if (v == null || !isFinite(v)) return '—';
+  const d = Math.round(v * 10) / 10;
+  return d < 10 && d !== Math.round(d) ? `${d.toFixed(1)}%` : `${Math.round(v)}%`;
+}
 
 function bar(pct, width, color) {
   pct = Math.max(0, Math.min(100, pct || 0));

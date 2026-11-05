@@ -30,9 +30,38 @@ function fromInput(input, now = Date.now()) {
   };
 }
 
-// Save the snapshot: always as "latest", and into the history log at most once a minute
-// (or sooner when a percentage moves by a full point).
+// Several Claude Code sessions report the same limits, but an idle session keeps showing the
+// numbers from its own last reply. Within one window (same resets_at) a limit % only goes up,
+// so keep the highest value any session reported; a newer window replaces it.
+// `lr` = time of the newest Claude Code reply behind the numbers (when they were fresh).
+function mergeKey(out, prev, snap, key, rkey, now) {
+  if (prev[key] == null || prev[rkey] == null || prev[rkey] <= now) return false;
+  if (snap[key] == null || snap[rkey] == null) return false;
+  const same = winId(prev[rkey]) === winId(snap[rkey]);
+  if (same) {
+    if (prev[key] > snap[key]) { out[key] = prev[key]; return true; }
+    return snap[key] === prev[key];
+  }
+  // A session still showing an older window: keep the newer one.
+  if (snap[rkey] < prev[rkey]) { out[key] = prev[key]; out[rkey] = prev[rkey]; return true; }
+  return false;
+}
+
+function merge(prev, snap, now = Date.now()) {
+  if (!snap) return prev || null;
+  if (!prev) return snap;
+  const out = { ...snap };
+  const keptF = mergeKey(out, prev, snap, 'f', 'fr', now);
+  const keptW = mergeKey(out, prev, snap, 'w', 'wr', now);
+  // Same numbers seen in another session: they're as fresh as the newest reply of either.
+  if ((keptF || keptW) && prev.lr != null) out.lr = Math.max(prev.lr, snap.lr || 0);
+  return out;
+}
+
+// Save the snapshot: always as "latest" (merged with what other sessions reported), and into
+// the history log at most once a minute (or sooner when a percentage moves by a full point).
 function record(snap) {
+  snap = merge(latest(), snap, snap.t);
   writeJSON(file('latest.json'), snap);
   const st = readJSON(file('snap-state.json'), {});
   const last = st.last;
@@ -105,4 +134,4 @@ function windows(snaps, key = 'w') {
   return [...wins.values()].sort((a, b) => a.resetAt - b.resetAt);
 }
 
-module.exports = { fromInput, record, latest, read, readRecent, increments, hits, windows, winId, HIT_PCT };
+module.exports = { fromInput, merge, record, latest, read, readRecent, increments, hits, windows, winId, HIT_PCT };

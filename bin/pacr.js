@@ -65,7 +65,7 @@ const HELP = `pacr ${pkg.version} — Claude Code usage tracker (unofficial, loc
   pacr watch              background loop for alerts when Claude Code is closed
   pacr install [--refresh 30]   add the status line to Claude Code
   pacr uninstall          remove it (restores your previous one, removes the hook)
-  pacr hooks install [--yes]   opt-in hook: trim test/build output to failures + summary
+  pacr hooks install [--yes]   experimental, opt-in: trim test/build output to failures + summary
   pacr hooks status | off | on | uninstall
   pacr doctor             check setup
 
@@ -179,12 +179,13 @@ function hooksCmd() {
   switch (sub) {
     case 'install': {
       const st = hooks.status();
-      out(`pacr will add this PreToolUse hook to ${st.path}:\n`);
+      out(`Experimental. pacr will add this PreToolUse hook to ${st.path}:\n`);
       out(hooks.preview());
       out(`\nBefore simple test/build commands (npm test, npm run build, pnpm/yarn test|build, pytest, go test,
 cargo test) run, it pipes their output through a filter that keeps failures, errors and the summary
 (max ~${hooks.MAX_LINES} lines). Exit codes are kept. Other commands are never touched; on any error the command
-runs unchanged. Your permission rules still apply. Full output: prefix the command with PACR_RAW=1.
+runs unchanged. Your permission rules are checked against the original command: a deny or ask rule
+means it isn't rewritten, an allow rule keeps it allowed. Full output: prefix the command with PACR_RAW=1.
 settings.json is backed up first. Quick disable: pacr hooks off · remove: pacr hooks uninstall\n`);
       if (flag('yes') || flag('y')) return report(hooks.install());
       if (!process.stdin.isTTY) { out('Not a terminal: run  pacr hooks install --yes  to confirm.'); process.exitCode = 1; return; }
@@ -275,7 +276,7 @@ function doctor() {
   const latest = snapshots.latest();
   if (!latest) out(`${warn} limit data: none yet (appears after the status line runs in a Pro/Max session)`);
   else if (latest.f == null && latest.w == null) out(`${warn} limit data: status line runs, but no 5h/weekly limits (API-key login or before the first reply)`);
-  else out(`${ok(true)} limit data: 5h ${util.fmtPct(latest.f)}, week ${util.fmtPct(latest.w)} — ${util.fmtDur(Date.now() - latest.t)} ago`);
+  else out(`${ok(true)} limit data: 5h ${util.fmtPct(latest.f)}, week ${util.fmtPct(latest.w)} — from last Claude Code reply, ${util.fmtDur(Date.now() - (latest.lr || latest.t))} ago`);
   const n = require('../src/notify');
   const method = process.platform === 'darwin' ? 'osascript' : process.platform === 'win32' ? 'PowerShell toast' : n.isWSL() ? 'PowerShell toast (WSL)' : 'notify-send';
   out(`${ok(true)} notifications: ${method}  ${util.c('d', '(test: pacr alerts test)')}`);
